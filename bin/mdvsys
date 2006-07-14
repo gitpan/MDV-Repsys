@@ -1,0 +1,174 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+if (!$ENV{LC_ALL} || $ENV{LC_ALL} ne 'C') {
+    $ENV{LC_ALL} = 'C';
+    exec($0, @ARGV);
+}
+
+use Getopt::Long;
+use Pod::Usage;
+use MDV::Repsys;
+use MDV::Repsys::Remote;
+use POSIX qw(getcwd);
+
+=head1 NAME
+
+mdvsys
+
+=head1 DESCRIPTION
+
+Tools to import and extract rpm from a svn
+
+=head1 SYNOPSIS
+
+mdvsys [options] <action> ...
+
+<action> is one of:
+
+=over 4
+
+=item import rpmfile1 [[rpmfile2] ...]
+
+import one or more src.rpm directly into the svn.
+
+=item getsrpm pkgname
+
+Extract a source package from the svn into current directory.
+
+=item checkout pkgname [dir]
+
+Checkout from svn the "current" version of a package.
+
+=item sync [dir]
+
+Find the spec file into the dir SPECS/ and perform proper add/del on
+sources file into the svn from a working copy.
+
+No changes are done into the repository.
+
+=back
+
+=cut
+
+my %roptions;
+
+=head1 OPTIONS
+
+=over 4
+
+=item -c <configfile>
+
+Use this configuration file instead /etc/repsys.conf.
+
+=item no-commit
+
+Commit into the svn will not be done.
+
+This options has effect for import action.
+
+=item r <revision>
+
+Work on a specific revision.
+
+=item m <message>
+
+Set this message for commiting
+
+=item noyouri
+
+Get the standard srpms file, without the '@rev:' prefix.
+
+=back
+
+=cut
+
+GetOptions(
+    'no-commit'  => \my $nocommit,
+    'm=s'        => \$roptions{commit_message},
+    'r=s'        => \$roptions{revision},
+    'c|config=s' => \my $configfile,
+    'd|dest=s'   => \$roptions{destdir},
+    'noyouri'    => \my $noyouri,
+) or pod2usage(1);
+
+my ($action, @args) = @ARGV;
+
+if (!$action) {
+    pod2usage(0);
+}
+
+for ($action) {
+
+    /^sync$/ and do {
+        my $dir = $args[0] || getcwd();
+        MDV::Repsys::set_rpm_dirs($dir);
+        MDV::Repsys::sync_source(
+            $dir,
+            (glob("$dir/SPECS/*.spec"))[0],
+        );
+        last;
+    };
+
+    my $repsys = MDV::Repsys::Remote->new(
+        nocommit => $nocommit,
+        configfile => $configfile,
+    );
+
+    /^import$/ and do {
+        foreach my $rpmfile (@args) {
+            $repsys->import_pkg(
+                $rpmfile,
+                %roptions,
+            );
+        }
+        last;
+    };
+
+    /^getsrpm$/ and do {
+        foreach my $name (@args) {
+            my ($r, $f) = $repsys->get_srpm(
+                $name,
+                %roptions,
+            );
+            if ($r) {
+                if ($noyouri) {
+                    print "$r $f\n";
+                } else {
+                    my $ysrpms = sprintf(
+                        '@%d:%s',
+                        $r, ($f =~ m:.*/+(.*\.src.rpm)$:)[0]
+                    );
+                    system('mv', $f, $ysrpms);
+                    print "$ysrpms\n";
+                }
+            } else {
+                warn "Can't extract $name\n";
+            }
+        }
+        last;
+    };
+
+    /^(co|checkout)$/ and do {
+        $repsys->checkout_pkg(
+            $args[0],
+            $args[1],
+            %roptions,
+        );
+        last;
+    };
+}
+
+__END__
+
+=head1 AUTHORS
+
+Olivier Thauvin <nanardon@mandriva.org>
+
+=head1 SEE ALSO
+
+L<repsys>
+
+=cut

@@ -1,0 +1,153 @@
+2006-07-14 13:46  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: mdvsys generate rpm ready
+	  for upload
+
+2006-07-14 13:34  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - document
+	  MDV::Repsys::Remote
+
+2006-07-14 02:10  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/MANIFEST,
+	  soft/rpm/MDV-Repsys/trunk/perl-MDV-Repsys.spec,
+	  soft/rpm/MDV-Repsys/trunk/t/cowsay-3.03-11mdv2007.0.src.rpm,
+	  soft/rpm/MDV-Repsys/trunk/t/test.t: - add test
+
+2006-07-14 13:34  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - document
+	  MDV::Repsys::Remote
+
+2006-07-14 02:10  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/MANIFEST,
+	  soft/rpm/MDV-Repsys/trunk/perl-MDV-Repsys.spec,
+	  soft/rpm/MDV-Repsys/trunk/t/cowsay-3.03-11mdv2007.0.src.rpm,
+	  soft/rpm/MDV-Repsys/trunk/t/test.t: - add test
+
+2006-07-14 02:09  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - more doc
+	  and some minor improvement
+
+2006-07-13 22:28  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - getcwd come from POSIX
+
+2006-07-13 12:42  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - allow to use another
+	  config file
+
+2006-07-13 07:33  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: Add missing
+	  \n on warning message
+
+2006-07-13 07:28  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: Use the
+	  3-arg open (safer)
+
+2006-07-13 02:22  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - don't allocate
+	  MDV::Repsys::Remote if not need
+
+2006-07-13 02:17  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - some doc improvement
+
+2006-07-13 02:10  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/perl-MDV-Repsys.spec: - more doc
+
+2006-07-13 01:56  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - make some
+	  argument optional in function
+
+2006-07-13 01:19  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - don't
+	  touch to spec and old changelog if there is no changelog into
+	  the spec
+
+2006-07-13 01:09  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add co and sync command
+
+2006-07-13 00:39  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - add tag
+	  function
+
+2006-07-13 00:38  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - fix direcotry
+	  creation
+
+2006-07-12 22:13  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/MANIFEST,
+	  soft/rpm/MDV-Repsys/trunk/perl-MDV-Repsys.spec: prepare for
+	  building a rpm
+
+2006-07-12 22:12  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin,
+	  soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add command line tools
+
+2006-07-12 22:11  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - factorize
+	  code, trap some error
+
+2006-07-12 20:26  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - avoid to
+	  replace but updating file when importing,
+	  - allow to no commit
+
+2006-07-12 19:49  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/Makefile.PL: - fix make rpm
+
+2006-07-12 18:26  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - add import
+	  functions
+
+2006-07-12 17:00  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - add f()
+	  merge changelog
+
+2006-07-12 16:20  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - first
+	  functions
+
+2006-07-12 12:27  nanardon
+
+	* soft/rpm/MDV-Repsys, soft/rpm/MDV-Repsys/branches,
+	  soft/rpm/MDV-Repsys/tags, soft/rpm/MDV-Repsys/trunk,
+	  soft/rpm/MDV-Repsys/trunk/MANIFEST,
+	  soft/rpm/MDV-Repsys/trunk/Makefile.PL,
+	  soft/rpm/MDV-Repsys/trunk/README, soft/rpm/MDV-Repsys/trunk/lib,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/perl-MDV-Repsys.spec,
+	  soft/rpm/MDV-Repsys/trunk/t: - add MDV::Repsys skeleton
+
