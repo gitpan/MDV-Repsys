@@ -1,3 +1,99 @@
+2006-07-16 02:25  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - fix stripcl
+
+2006-07-16 01:02  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - trap some
+	  error
+	  - return revision number instead just 1
+
+2006-07-16 01:01  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add exitstatus
+
+2006-07-15 20:45  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - prepare for 0.02
+
+2006-07-15 20:44  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/Makefile.PL,
+	  soft/rpm/MDV-Repsys/trunk/perl-MDV-Repsys.spec: - don't build
+	  the rpm from there
+
+2006-07-15 20:42  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - add doc
+	  - add stripcl function
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - improve
+	  commit message
+
+2006-07-15 17:02  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add mdvsys build
+
+2006-07-15 16:46  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - disable rpm
+	  signature
+
+2006-07-15 15:25  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm,
+	  soft/rpm/MDV-Repsys/trunk/t/test.t: - end tag function
+
+2006-07-15 01:24  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - split code
+	  to reuse it alone
+
+2006-07-15 00:59  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/t/test.t: - add a build fonction
+
+2006-07-15 00:58  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - fix log
+	  message to look like to repsys
+
+2006-07-14 17:59  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - commit
+	  only the package directory
+
+2006-07-14 16:25  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - fix anoter issue
+	  with relative path
+
+2006-07-14 15:42  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - fix 2 issues with
+	  relative path
+
+2006-07-14 13:46  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: mdvsys generate rpm ready
+	  for upload
+
+2006-07-14 13:34  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - document
+	  MDV::Repsys::Remote
+
+2006-07-14 02:10  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/MANIFEST,
+	  soft/rpm/MDV-Repsys/trunk/perl-MDV-Repsys.spec,
+	  soft/rpm/MDV-Repsys/trunk/t/cowsay-3.03-11mdv2007.0.src.rpm,
+	  soft/rpm/MDV-Repsys/trunk/t/test.t: - add test
+
 2006-07-14 13:46  nanardon
 
 	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: mdvsys generate rpm ready

@@ -13,6 +13,7 @@ use Pod::Usage;
 use MDV::Repsys;
 use MDV::Repsys::Remote;
 use POSIX qw(getcwd);
+use File::Temp qw(tempdir);
 
 =head1 NAME
 
@@ -48,6 +49,16 @@ Find the spec file into the dir SPECS/ and perform proper add/del on
 sources file into the svn from a working copy.
 
 No changes are done into the repository.
+
+=item build pkgname
+
+Retrieve from svn and build package "pkgname"
+
+=item stripcl [specfile]
+
+Remove the changelog of the specfile and commit it into the svn.
+
+If the --no-commit options is set, the commit part is not done.
 
 =back
 
@@ -100,15 +111,20 @@ if (!$action) {
     pod2usage(0);
 }
 
+my $exitstatus = 0;
+
 for ($action) {
 
     /^sync$/ and do {
         my $dir = $args[0] || getcwd();
         MDV::Repsys::set_rpm_dirs($dir);
-        MDV::Repsys::sync_source(
+        if (! MDV::Repsys::sync_source(
             $dir,
             (glob("$dir/SPECS/*.spec"))[0],
-        );
+        )) {
+            warn "Can't sync $dir\n";
+            $exitstatus = 1;
+        }
         last;
     };
 
@@ -119,10 +135,13 @@ for ($action) {
 
     /^import$/ and do {
         foreach my $rpmfile (@args) {
-            $repsys->import_pkg(
+            if (!$repsys->import_pkg(
                 $rpmfile,
                 %roptions,
-            );
+            )) {
+                warn "Can't import $rpmfile\n";
+                $exitstatus = 1;
+            }
         }
         last;
     };
@@ -146,20 +165,89 @@ for ($action) {
                 }
             } else {
                 warn "Can't extract $name\n";
+                $exitstatus = 1;
             }
         }
         last;
     };
 
     /^(co|checkout)$/ and do {
-        $repsys->checkout_pkg(
+        if (!$repsys->checkout_pkg(
             $args[0],
             $args[1],
             %roptions,
-        );
+        )) {
+            warn "Can't checkout $args[0]\n";
+            $exitstatus = 1;
+        }
         last;
     };
+
+    /^log$/ and do {
+        if (!$repsys->build_final_changelog($args[0])) {
+            warn "Can't get changelog of $args[0]\n";
+            $exitstatus = 1;
+        }
+        last;
+    };
+
+    /^tag$/ and do {
+        if (!$repsys->tag_pkg(
+            $args[0],
+            %roptions,
+        )) {
+            warn "Can't tag $args[0]\n";
+            $exitstatus = 1;
+        }
+        last;
+    };
+
+    /^build$/ and do {
+        my $tempdir = tempdir();
+        $repsys->checkout_pkg(
+            $args[0],
+            $tempdir,
+             %roptions,
+        ) or do {
+            warn "Can't extract $args[0]\n";
+            $exitstatus = 1;
+            next;
+        };
+        my $specfile = $repsys->get_final_spec(
+            (glob("$tempdir/SPECS/*.spec"))[0],
+            %roptions, pkgname => $args[0],
+        ) or do {
+            warn "can't get final specfile\n";
+            $exitstatus = 1;
+            next;
+        };
+        MDV::Repsys::build(
+            $tempdir,
+            'b',
+            %roptions, specfile => $specfile,
+        ) or do {
+            warn "Build failed\n";
+            $exitstatus = 1;
+            next;
+        };
+        last;
+    };
+
+    /^stripcl$/ and do {
+        my $specfile = $args[0] || (glob("SPECS/*.spec"))[0];
+        if (! ($nocommit ?
+            MDV::Repsys::strip_changelog($specfile) :
+            $repsys->splitchangelog($specfile))) {
+            warn "Can't extract changelog";
+            $exitstatus = 1;
+        }
+        last;
+    };
+
+    pod2usage(1);
 }
+
+exit($exitstatus);
 
 __END__
 

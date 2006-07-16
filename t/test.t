@@ -3,7 +3,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 10;
+use Test::More tests => 13;
 use File::Temp qw(tempdir);
 
 use_ok('MDV::Repsys');
@@ -62,6 +62,30 @@ EOF
         $MRR->checkout_pkg('cowsay', "$tempdata/cowsay"),
         "checkout_pkg return ok"
     );
+    ok(
+        $MRR->tag_pkg('cowsay'),
+        'tag_pkg return ok'
+    );
+
+    my %results = MDV::Repsys::build("$tempdata/cowsay", 'bs', destdir => $tempdata);
+    ok(
+        %results,
+        'build return ok'
+    );
+
+    my $allexists = 1;
+
+    foreach my $t (qw(src bin)) {
+        foreach (@{$results{$t}}) {
+            if (! -f $_) {
+                $allexists = 0;
+                last;
+            }
+        }
+    }
+
+    ok($allexists, 'all rpms was really created');
+
     ok(-f "$tempdata/cowsay/SPECS/cowsay.spec", "pkg was really checkout");
     ok(
         $MRR->get_srpm('cowsay', destdir => $tempdata),

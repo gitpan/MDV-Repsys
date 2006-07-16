@@ -10,7 +10,7 @@ use POSIX qw(getcwd strftime);
 use RPM4;
 use File::Temp qw(tempdir tempfile);
 
-our $VERSION = ('$Revision: 41107 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 41351 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -121,6 +121,7 @@ sub get_old_changelog {
         ),
         $options{revision} || $self->{default}{revision},
     ); };
+    return 1;
 }
 
 
@@ -151,7 +152,7 @@ sub log_pkg {
             my ($changed_paths, $revision, $author, $date, $message) = @_;
             my $time = str2time($date);
             printf $handle 
-                "* %s %s\n+%s (%s)\n%s\n\n",
+                "* %s %s\n+ %s (%s)\n%s\n\n",
                 strftime("%a %b %d %Y", gmtime($time)),
                 $self->{config}->val('users', $author, $author),
                 strftime("%F %T", gmtime($time)), $revision,
@@ -178,7 +179,7 @@ sub build_final_changelog {
         $pkgname,
         $handle,
         %options,
-    );
+    ) and return 0;
     $self->get_old_changelog($pkgname, $handle, %options);
 }
 
@@ -342,10 +343,14 @@ sub import_pkg {
         }
     );
     print "Commiting $pkgname\n";
-    $self->{svn}->commit($tempdir, 0) unless($self->{nocommit});
+    my $revision = -1;
+    if (!$self->{nocommit}) {
+        my $info = $self->{svn}->commit($pkgdir, 0) unless($self->{nocommit});
+        $revision = $info->revision();
+    }
     $self->{svn}->log_msg(undef);
 
-    1;
+    $revision;
 }
 
 =head2 splitchangelog($specfile, %options)
@@ -367,29 +372,12 @@ sub splitchangelog {
         $pkgname = $h->queryformat('%{NAME}');
     }
 
-    my $changelog = '';
-    my $newspec = new File::Temp(
-        TEMPLATE => "$ENV{TMPDIR}/basename.XXXXXX",
-        UNLINK => 1
-    );
-
-    if (open(my $oldsfh, "<", $specfile)) {
-        my $ischangelog = 0;
-        while(my $line = <$oldsfh>) {
-            $line =~ /^%changelog/ and $ischangelog = 1;
-            $line =~ /^%(files|build|check|prep|post|pre|package)/ and $ischangelog = 0;
-            if ($ischangelog) {
-                $changelog .= $line;
-            } else {
-                print $newspec $line;
-            }
-        }
-        close($oldsfh);
-    }
+    my ($changelog, $newspec) = MDV::Repsys::_strip_changelog($specfile);
 
     if (!$changelog) {
-        return 1;
+        return -1;
     }
+    my $revision = -1;
 
     my $tempdir = tempdir( CLEANUP => 1 );
     my $resyslog = $self->{config}->val('log', 'oldurl');
@@ -400,7 +388,7 @@ sub splitchangelog {
             $tempdir,
             'HEAD',
             0,
-        );
+        ) or return 0;
         $self->{svn}->update(
             "$tempdir/$pkgname",
             'HEAD',
@@ -410,11 +398,13 @@ sub splitchangelog {
             $self->{svn}->mkdir("$tempdir/$pkgname");
         }
         if (-f "$tempdir/$pkgname/log") {
-            die "File log exists";
+            return 0;
         }
         if (open(my $logh, ">", "$tempdir/$pkgname/log")) {
             print $logh $changelog;
             close($logh);
+        } else {
+            return 0;
         }
         $self->{svn}->add("$tempdir/$pkgname/log", 0);
         my $message = $options{message} || "import old changelog for $pkgname";
@@ -423,7 +413,11 @@ sub splitchangelog {
             return 0;
         });
         print "Commiting $pkgname/log\n";
-        $self->{svn}->commit($tempdir, 0) unless($self->{nocommit});
+        if (!$self->{nocommit}) {
+            my $info = $self->{svn}->commit($tempdir, 0);
+            $revision = $info->revision();
+        }
+
         $self->{svn}->log_msg(undef);
     }
 
@@ -433,7 +427,10 @@ sub splitchangelog {
             print $oldspec $_;
         }
         close($oldspec);
+    } else {
+        return;
     }
+    $revision;
 }
 
 sub _check_url_exists {
@@ -476,6 +473,7 @@ sub tag_pkg {
     my $re = $header->queryformat('%{RELEASE}');
 
     my $tagurl = $self->get_pkgurl($pkgname, pkgversion => 'releases');
+    my $pristineurl = $self->get_pkgurl($pkgname, pkgversion => 'pristine');
 
     if (!$self->_check_url_exists($tagurl)) {
         $self->{svn}->mkdir($tagurl);
@@ -490,7 +488,7 @@ sub tag_pkg {
         return 0;
     }
 
-    my $message = "$ev-$re";
+    my $message = "Tag release $ev-$re";
     $self->{svn}->log_msg(
         sub {
             $_[0] = \$message;
@@ -501,6 +499,14 @@ sub tag_pkg {
         $self->get_pkgurl($pkgname),
         $options{revision} || $self->{default}{revision},
         "$tagurl/$ev/$re",
+    );
+    eval {
+        $self->{svn}->delete($pristineurl, 1);
+    };
+    $self->{svn}->copy(
+        $self->get_pkgurl($pkgname),
+        $options{revision} || $self->{default}{revision},
+        $pristineurl
     );
     $self->{svn}->log_msg(undef);
  
