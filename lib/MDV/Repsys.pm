@@ -1,4 +1,4 @@
-# $Id: Repsys.pm 41332 2006-07-15 20:45:19Z nanardon $
+# $Id: Repsys.pm 41598 2006-07-19 09:36:58Z nanardon $
 
 package MDV::Repsys;
 
@@ -8,7 +8,9 @@ use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
+
+my $error = undef;
 
 =head1 NAME
 
@@ -68,8 +70,12 @@ Return 1 on sucess, 0 on failure.
 
 sub create_rpm_dirs {
     foreach my $m (keys %b_macros) {
-        if (! -d RPM4::expand('%' . $m)) {
-            mkdir RPM4::expand('%' . $m) or return 0;
+        my $dtc = RPM4::expand('%' . $m); # dir to create
+        if (! -d RPM4::expand($dtc)) {
+            if (!mkdir RPM4::expand($dtc)) {
+                $error = "can't create $dtc: $!";
+                return 0;
+            }
         }
     }
     1;
@@ -107,7 +113,10 @@ sub sync_source {
     }
 
     set_rpm_dirs($working_dir, %relative_dir);
-    my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or return 0;
+    my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
+        $error = "Can't read specfile";
+        return;
+    };
 
     my $svn = SVN::Client->new();
 
@@ -153,7 +162,11 @@ sub sync_source {
             'HEAD',
             sub {
                 my ($entry, $status) = @_;
-                grep { $entry eq $_ } (RPM4::expand('%_specdir'), RPM4::expand('%_sourcedir')) and return;
+                grep { $entry eq $_ } (
+                    RPM4::expand('%_specdir'),
+                    RPM4::expand('%_sourcedir')
+                    ) and return;
+
                 if ($status->text_status eq '2') {
                     if ($sources{$entry}) {
                         push(@needadd, $entry);
@@ -170,7 +183,6 @@ sub sync_source {
             0,
             1,
         );
-
     }
 
     foreach my $toadd (sort @needadd) {
@@ -191,13 +203,21 @@ sub _strip_changelog {
     my $newspec = new File::Temp(
         TEMPLATE => "$ENV{TMPDIR}/basename.XXXXXX",
         UNLINK => 1
-    );
+    ) or do {
+        $error = $!;
+        return;
+    };
 
     if (open(my $oldsfh, "<", $specfile)) {
         my $ischangelog = 0;
         while(my $line = <$oldsfh>) {
-            $line =~ /^%changelog/ and $ischangelog = 1;
-            $line =~ /^%(files|build|check|prep|post|pre|package)/ and $ischangelog = 0;
+            if ($line =~ /^%changelog/) {
+                $ischangelog = 1;
+                next;
+            }
+            if ($line =~ /^%(files|build|check|prep|post|pre|package|description)/) {
+                $ischangelog = 0;
+            }
             if ($ischangelog) {
                 $changelog .= $line;
             } else {
@@ -205,6 +225,9 @@ sub _strip_changelog {
             }
         }
         close($oldsfh);
+    } else {
+        $error = "Can't open $specfile: $!";
+        return;
     }
 
     return($changelog, $newspec);
@@ -230,6 +253,7 @@ sub strip_changelog {
         }
         close($oldspec);
     } else {
+        $error = "can't open $specfile: $!";
         return;
     }
 
@@ -259,10 +283,19 @@ sub build {
     );
 
     my $specfile = $options{specfile} || (glob(RPM4::expand('%_specdir/*.spec')))[0];
-    $specfile or return;
+    if (!$specfile) {
+        $error = "Can't find specfile";
+        return;
+    }
 
-    RPM4::del_macro("_signature");
-    my $spec = RPM4::specnew($specfile, undef, '/', undef, 0, 0) or return;
+    RPM4::del_macro("_signature"); # don't bother
+    my $spec = RPM4::specnew(
+        $specfile, undef, 
+        $options{root} || '/',
+        undef, 0, 0) or do {
+        $error = "Can't read specfile $specfile";
+        return;
+    };
 
     if (! $options{nodeps}) {
         my $db = RPM4::newdb();
@@ -273,9 +306,9 @@ sub build {
      
         if ($pbs) {
             $pbs->init;
-            print "\nMissing dependancies:\n";
+            $error = "\nMissing dependancies:\n";
             while($pbs->hasnext) {
-                print "\t" . $pbs->problem() . "\n";
+                $error .= "\t" . $pbs->problem() . "\n";
             }
             return;
         }
@@ -287,13 +320,19 @@ sub build {
     if ($what =~ /b/) {
         push(@bflags, qw(PREP BUILD INSTALL CHECK FILECHECK PACKAGEBINARY));
         if (!-d RPM4::expand('%_rpmdir')) {
-            mkdir RPM4::expand('%_rpmdir') or return;
+            mkdir RPM4::expand('%_rpmdir') or do {
+                $error = "Can't create " . RPM4::expand('%_rpmdir') . ": $!";
+                return;
+            };
         }
         foreach my $rpm ($spec->binrpm) {
             push(@{$results{bin}}, $rpm);
             my ($dirname) = $rpm =~ m:(.*)/:;
             if (! -d $dirname) {
-                mkdir $dirname or return; 
+                mkdir $dirname or do {
+                    $error = "Can't create $dirname: $!";
+                    return;
+               }; 
             }
         }
     }
@@ -306,7 +345,10 @@ sub build {
             push(@{$results{src}}, $rpm);
             my ($dirname) = $rpm =~ m:(.*)/:;
             if (! -d $dirname) {
-                mkdir $dirname or return;
+                mkdir $dirname or do {
+                    $error = "Can't create $dirname: $!";
+                    return;
+                };
             }
         }
     }
@@ -314,6 +356,10 @@ sub build {
     $spec->build([ @bflags ]) and return;
 
     return %results;
+}
+
+sub repsys_error {
+    $error
 }
 
 1;

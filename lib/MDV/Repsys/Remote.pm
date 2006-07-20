@@ -6,11 +6,12 @@ use MDV::Repsys qw(sync_source extract_srpm);
 use Config::IniFiles;
 use SVN::Client;
 use Date::Parse;
-use POSIX qw(getcwd strftime);
+use Date::Format;
+use POSIX qw(getcwd);
 use RPM4;
 use File::Temp qw(tempdir tempfile);
 
-our $VERSION = ('$Revision: 41351 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 41678 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -57,9 +58,20 @@ sub new {
             pkgversion => 'current',
             revision => 'HEAD',
         },
+        error => undef,
     };
 
     bless($repsys, $class);
+}
+
+=head2 last_error
+
+Return the last error message after a failure.
+
+=cut
+
+sub last_error {
+    return $_[0]->{error};
 }
 
 =head2 get_pkgurl($pkgname, %options)
@@ -89,12 +101,19 @@ sub checkout_pkg {
 
     $destdir ||= $pkgname;
 
-    my $revision = $self->{svn}->checkout(
-        $self->get_pkgurl($pkgname, %options),
-        $destdir,
-        $options{revision} || $self->{default}{revision},
-        1,
-    );
+    my $revision;
+    eval {
+        $revision = $self->{svn}->checkout(
+            $self->get_pkgurl($pkgname, %options),
+            $destdir,
+            $options{revision} || $self->{default}{revision},
+            1,
+        );
+    };
+    if ($@) {
+        $self->{error} = "Can't checkout $pkgname: $@";
+        return;
+    }
 
     return $revision;
 }
@@ -112,28 +131,110 @@ sub get_old_changelog {
     $handle ||= \*STDOUT;
 
     eval {
-    $self->{svn}->cat(
-        $handle,
-        sprintf(
-            "%s/%s/log",
-            $self->{config}->val('log', 'oldurl'),
-            $pkgname,
-        ),
-        $options{revision} || $self->{default}{revision},
-    ); };
+        $self->{svn}->cat(
+            $handle,
+            sprintf(
+                "%s/%s/log",
+                $self->{config}->val('log', 'oldurl'),
+                $pkgname,
+            ),
+            $options{revision} || $self->{default}{revision},
+        ); 
+    };
+    if ($@) {
+        $self->{error} = "Can't get old changelog for $pkgname: $@";
+        return;
+    }
     return 1;
 }
 
+sub _old_log_pkg {
+    my ($self, $pkgname, %options) = @_;
+
+    my $templog = File::Temp->new(UNLINK => 1);
+
+    $self->get_old_changelog($pkgname, $templog, %options) or return;
+
+    my @cl;
+
+    seek($templog, 0, 0);
+
+    while(my $line = <$templog>) {
+        chomp($line);
+        $line or next;
+        $line =~ /^%changelog/ and next;
+        if ($line =~ /^\* (\w+\s+\w+\s+\d+\s+\d+)\s+(.*)/) {
+            push(
+                @cl,
+                {
+                    'time' => str2time($1),
+                    author => $2,
+                    text => '',
+                }
+            );
+        } else {
+            $cl[-1]->{text} .= "$line\n";
+        }
+    }
+
+    @cl;
+}
 
 sub _log_pkg {
-    my ($self, $pkgname, $callback, %options) = @_;
+    my ($self, $pkgname, %options) = @_;
     
-    $self->{svn}->log(
-        $self->get_pkgurl($pkgname, %options),
-        $options{revision} || $self->{default}{revision},
-        0, 0, 0,
-        $callback,
-    );
+    my @cl;
+
+    my $callback = sub {
+        my ($changed_paths, $revision, $author, $date, $message) = @_;
+        push(
+            @cl, 
+            {
+                revision => $revision,
+                author => $self->{config}->val('users', $author, $author),
+                'time' => str2time($date),
+                text => "$message\n",
+            }
+        );
+    };
+
+    eval {
+        $self->{svn}->log(
+            $self->get_pkgurl($pkgname, %options),
+            $options{revision} || $self->{default}{revision},
+            0, 0, 0,
+            $callback,
+        );
+    };
+    if ($@) {
+        $self->{error} = "Can't get svn log: $@";
+        return;
+    }
+
+    @cl
+}
+
+sub _fmt_cl_entry {
+    my ($cl) = @_;
+    my @gti = gmtime($cl->{'time'});
+    sprintf
+        "* %s %s\n%s%s\n",
+        #  date
+        #     author
+        #         svn date + rev
+        #           message
+        strftime("%a %b %d %Y", @gti), # date
+        $cl->{author},                 # author
+        ($cl->{revision} ? 
+            sprintf(
+                "+ %s (%s)\n",
+                #  svn date
+                #      revision
+                strftime("%x %T", @gti),   # svn date
+                $cl->{revision},           # revision
+            ) : ''
+        ),                             # svn date + rev
+        $cl->{text};                   # message
 }
 
 =head2 log_pkg($pkgname, $handle, %options)
@@ -146,20 +247,10 @@ If not specified, $handle is set to STDOUT.
 sub log_pkg {
     my ($self, $pkgname, $handle, %options) = @_;
     $handle ||= \*STDOUT;
-    $self->_log_pkg(
-        $pkgname,
-        sub {
-            my ($changed_paths, $revision, $author, $date, $message) = @_;
-            my $time = str2time($date);
-            printf $handle 
-                "* %s %s\n+ %s (%s)\n%s\n\n",
-                strftime("%a %b %d %Y", gmtime($time)),
-                $self->{config}->val('users', $author, $author),
-                strftime("%F %T", gmtime($time)), $revision,
-                $message;
-        },
-        %options,
-    );
+    foreach my $cl ($self->_log_pkg($pkgname, %options)) {
+            print $handle _fmt_cl_entry($cl);
+    }
+    1;
 }
 
 =head2 build_final_changelog($pkgname, $handle, %options)
@@ -174,13 +265,15 @@ sub build_final_changelog {
 
     $handle ||= \*STDOUT;
 
-    print $handle "\n\%changelog\n";
-    $self->log_pkg(
-        $pkgname,
-        $handle,
-        %options,
-    ) and return 0;
-    $self->get_old_changelog($pkgname, $handle, %options);
+    my @cls = $self->_log_pkg($pkgname, %options) or return 0;
+    push(@cls, $self->_old_log_pkg($pkgname, %options));
+ 
+    print $handle "\%changelog\n";
+
+    foreach my $cl (sort { $b->{'time'} <=> $a->{'time'} } grep { $_ } @cls) {
+        print $handle _fmt_cl_entry($cl);
+    }
+    1;
 }
 
 =head2 get_final_spec($specfile, %options)
@@ -198,8 +291,11 @@ sub get_final_spec {
     my $pkgname = $options{pkgname};
 
     if (!$pkgname) {
-        my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or return;
-        my $h = $spec->srcheader or return;
+        my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
+            $self->{error} = "Can't parse specfile $specfile";
+            return;
+        };
+        my $h = $spec->srcheader or return; # can't happend
         $pkgname = $h->queryformat('%{NAME}');
     }
 
@@ -213,14 +309,21 @@ sub get_final_spec {
                 print $dh $_;
             }
 
+            print $dh "\n";
             $self->build_final_changelog(
                 $pkgname,
                 $dh,
                 %options,
-            );
+            ) or return;
             close($dh);
+        } else {
+            $self->{error} = "Can't open temporary file for writing: $!";
+            return;
         }
         close($sh);
+    } else {
+        $self->{error} = "Can't open $specfile for reading: $!";
+        return;
     }
     
     return "$dir/$basename";
@@ -242,19 +345,25 @@ sub get_srpm {
 
     $self->checkout_pkg($pkgname, $tempdir, %options) or return 0;
 
-    $self->{svn}->status(
-        $tempdir,
-        $options{revision} || $self->{default}{revision},
-        sub {
-            my ($path, $status) = @_;
-            my $entry = $status->entry() or return;
-            $revision = $entry->cmt_rev if($revision < $entry->cmt_rev);
-        },
-        1, # recursive
-        1, # get_all
-        0, # update
-        0, # no_ignore
-    );
+    eval {
+        $self->{svn}->status(
+            $tempdir,
+            $options{revision} || $self->{default}{revision},
+            sub {
+                my ($path, $status) = @_;
+                my $entry = $status->entry() or return;
+                $revision = $entry->cmt_rev if($revision < $entry->cmt_rev);
+            },
+            1, # recursive
+            1, # get_all
+            0, # update
+            0, # no_ignore
+        );
+    };
+    if ($@) {
+        $self->{error} = "can't get status of $tempdir: $@";
+        return;
+    }
 
     MDV::Repsys::set_rpm_dirs($tempdir);
     RPM4::add_macro("_srcrpmdir " . ($options{destdir} || getcwd()));
@@ -265,7 +374,10 @@ sub get_srpm {
         pkgname => $pkgname,
     );
 
-    my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or return 0;
+    my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
+        $self->{error} = "Can't parse specfile $specfile";
+        return 0;
+    };
 
     RPM4::setverbosity(0);
     RPM4::del_macro("_signature");
@@ -284,18 +396,30 @@ Import a source package into the svn.
 sub import_pkg {
     my ($self, $rpmfile, %options) = @_;
 
-    my $h = RPM4::rpm2header($rpmfile) or return 0;
-    return 0 if($h->hastag('SOURCERPM'));
+    my $h = RPM4::rpm2header($rpmfile) or do {
+        $self->{error} = "Can't read rpm file $rpmfile";
+        return 0;
+    };
+    if($h->hastag('SOURCERPM')) {
+        $self->{error} = "$rpmfile is not a source package";
+        return;
+    }
     my $pkgname = $h->queryformat('%{NAME}');
 
     my $tempdir = $options{destdir} ? $options{destdir} : tempdir(CLEANUP => 0);
 
-    $self->{svn}->checkout(
-        $self->{config}->val('global', 'default_parent') || "",
-        $tempdir,
-        'HEAD', # What else ??
-        0, # Don't be recursive !!
-    );
+    eval {
+        $self->{svn}->checkout(
+            $self->{config}->val('global', 'default_parent') || "",
+            $tempdir,
+            'HEAD', # What else ??
+            0, # Don't be recursive !!
+        );
+    };
+    if ($@) {
+        $self->{error} = "Can't checkout " . $self->{config}->val('global', 'default_parent') . ": $@";
+        return;
+    }
 
     my $pkgdir = "$tempdir/$pkgname";
 
@@ -305,13 +429,8 @@ sub import_pkg {
         0,
     );
     if (-d $pkgdir) {
-        warn "$pkgname is already into svn\n";
-        return 0;
-        $self->{svn}->update(
-            "$pkgdir/current",
-            'HEAD',
-            1,
-        );
+        $self->{error} = "$pkgname is already inside svn\n";
+        return;
     } else {
         $self->{svn}->mkdir($pkgdir);
     }
@@ -323,17 +442,23 @@ sub import_pkg {
     MDV::Repsys::extract_srpm(
         $rpmfile,
         "$pkgdir/current",
-    ) or return 0;
+    ) or do {
+        $self->{error} = MDV::Repsys::repsys_error();
+        return 0;
+    };
     
     my $specfile = "$pkgdir/current/SPECS/$pkgname.spec";
     MDV::Repsys::set_rpm_dirs("$pkgdir/current");
-    MDV::Repsys::sync_source("$pkgdir/current", $specfile);
+    MDV::Repsys::sync_source("$pkgdir/current", $specfile) or do {
+        $self->{error} = MDV::Repsys::repsys_error();
+        return;
+    };
 
-    $self->splitchangelog(
+    return if(!$self->splitchangelog(
         $specfile, 
         %options,
         pkgname => $pkgname,
-    );
+    ));
    
     my $message = $options{message} || "Import $pkgname";
     $self->{svn}->log_msg(
@@ -367,8 +492,11 @@ sub splitchangelog {
     my $pkgname = $options{pkgname};
 
     if (!$pkgname) {
-        my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or return 0;
-        my $h = $spec->srcheader or return 0;
+        my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
+            $self->{error} = "Can't parse specfile $specfile";
+            return;
+        };
+        my $h = $spec->srcheader or return; # can't happend
         $pkgname = $h->queryformat('%{NAME}');
     }
 
@@ -383,12 +511,18 @@ sub splitchangelog {
     my $resyslog = $self->{config}->val('log', 'oldurl');
     if ($resyslog) {
         my $oldchangelogurl = "$resyslog/$pkgname";
-        $self->{svn}->checkout(
-            $resyslog,
-            $tempdir,
-            'HEAD',
-            0,
-        ) or return 0;
+        eval {
+            $self->{svn}->checkout(
+                $resyslog,
+                $tempdir,
+                'HEAD',
+                0,
+            );
+        };
+        if ($@) {
+            $self->{error} = "Can't checkout $resyslog: $@";
+            return;
+        }
         $self->{svn}->update(
             "$tempdir/$pkgname",
             'HEAD',
@@ -428,6 +562,7 @@ sub splitchangelog {
         }
         close($oldspec);
     } else {
+        $self->{error} = "Can't open $specfile for writing: $!";
         return;
     }
     $revision;
@@ -438,11 +573,19 @@ sub _check_url_exists {
     my ($parent, $leaf) = $url =~ m!(.*)?/+([^/]*)/*$!;
     print "$parent $leaf\n";
 
-    my $leafs = $self->{svn}->ls(
-        $parent, 
-        $options{revision} || $self->{default}{revision},
-        0,
-    );
+    my $leafs;
+
+    eval {
+        $leafs = $self->{svn}->ls(
+            $parent, 
+            $options{revision} || $self->{default}{revision},
+            0,
+        );
+    };
+    if ($@) {
+        $self->{error} = "Can't list $parent: $@";
+        return;
+    }
     exists($leafs->{$leaf})
 }
 
@@ -458,15 +601,24 @@ sub tag_pkg {
 
     my ($handle, $tempspecfile) = tempfile();
 
-    $self->{svn}->cat(
-        $handle,
-        $self->get_pkgurl($pkgname) . "/SPECS/$pkgname.spec",
-        $options{revision} || $self->{default}{revision},
-    );
+    eval {
+        $self->{svn}->cat(
+            $handle,
+            $self->get_pkgurl($pkgname) . "/SPECS/$pkgname.spec",
+            $options{revision} || $self->{default}{revision},
+        );
+    };
+    if ($@) {
+        $self->{error} = "Can't get specfile " . $self->get_pkgurl($pkgname) . "/SPECS/$pkgname.spec: $@";
+        return;
+    }
 
     close($handle);
 
-    my $spec = RPM4::specnew($tempspecfile, undef, '/', undef, 1, 1) or return 0;
+    my $spec = RPM4::specnew($tempspecfile, undef, '/', undef, 1, 1) or do {
+        $self->{error} = "Can't parse $tempspecfile";
+        return 0;
+    };
     my $header = $spec->srcheader or return 0;
 
     my $ev = $header->queryformat('%|EPOCH?{%{EPOCH}:}:{}|%{VERSION}');
@@ -484,8 +636,8 @@ sub tag_pkg {
     }
 
     if ($self->_check_url_exists("$tagurl/$ev/$re")) {
-        warn "$tagurl/$ev/$re already exists\n";
-        return 0;
+        $self->{error} = "$tagurl/$ev/$re already exists";
+        return;
     }
 
     my $message = "Tag release $ev-$re";

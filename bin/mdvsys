@@ -3,11 +3,6 @@
 use strict;
 use warnings;
 
-if (!$ENV{LC_ALL} || $ENV{LC_ALL} ne 'C') {
-    $ENV{LC_ALL} = 'C';
-    exec($0, @ARGV);
-}
-
 use Getopt::Long;
 use Pod::Usage;
 use MDV::Repsys;
@@ -117,12 +112,19 @@ for ($action) {
 
     /^sync$/ and do {
         my $dir = $args[0] || getcwd();
-        MDV::Repsys::set_rpm_dirs($dir);
-        if (! MDV::Repsys::sync_source(
-            $dir,
-            (glob("$dir/SPECS/*.spec"))[0],
-        )) {
-            warn "Can't sync $dir\n";
+        my $spec = (glob("$dir/SPECS/*.spec"))[0];
+        if ($spec) {
+            MDV::Repsys::set_rpm_dirs($dir);
+            if (! MDV::Repsys::sync_source(
+                $dir,
+                (glob("$dir/SPECS/*.spec"))[0],
+            )) {
+                warn "Can't sync $dir:\n";
+                warn MDV::Repsys::repsys_error() ."\n";
+                $exitstatus = 1;
+            }
+        } else {
+            warn "Can't find any specfile\n";
             $exitstatus = 1;
         }
         last;
@@ -139,6 +141,7 @@ for ($action) {
                 $rpmfile,
                 %roptions,
             )) {
+                warn $repsys->last_error() . "\n";
                 warn "Can't import $rpmfile\n";
                 $exitstatus = 1;
             }
@@ -164,6 +167,7 @@ for ($action) {
                     print "$ysrpms\n";
                 }
             } else {
+                warn $repsys->last_error() . "\n";
                 warn "Can't extract $name\n";
                 $exitstatus = 1;
             }
@@ -177,6 +181,7 @@ for ($action) {
             $args[1],
             %roptions,
         )) {
+            warn $repsys->last_error() . "\n";
             warn "Can't checkout $args[0]\n";
             $exitstatus = 1;
         }
@@ -185,6 +190,7 @@ for ($action) {
 
     /^log$/ and do {
         if (!$repsys->build_final_changelog($args[0])) {
+            warn $repsys->last_error() . "\n";
             warn "Can't get changelog of $args[0]\n";
             $exitstatus = 1;
         }
@@ -196,6 +202,7 @@ for ($action) {
             $args[0],
             %roptions,
         )) {
+            warn $repsys->last_error() . "\n";
             warn "Can't tag $args[0]\n";
             $exitstatus = 1;
         }
@@ -209,6 +216,7 @@ for ($action) {
             $tempdir,
              %roptions,
         ) or do {
+            warn $repsys->last_error() . "\n";
             warn "Can't extract $args[0]\n";
             $exitstatus = 1;
             next;
@@ -217,6 +225,7 @@ for ($action) {
             (glob("$tempdir/SPECS/*.spec"))[0],
             %roptions, pkgname => $args[0],
         ) or do {
+            warn $repsys->last_error() . "\n";
             warn "can't get final specfile\n";
             $exitstatus = 1;
             next;
@@ -226,6 +235,7 @@ for ($action) {
             'b',
             %roptions, specfile => $specfile,
         ) or do {
+            warn MDV::Repsys::repsys::error() . "\n";
             warn "Build failed\n";
             $exitstatus = 1;
             next;
@@ -238,6 +248,7 @@ for ($action) {
         if (! ($nocommit ?
             MDV::Repsys::strip_changelog($specfile) :
             $repsys->splitchangelog($specfile))) {
+            warn $repsys->last_error() . "\n";
             warn "Can't extract changelog";
             $exitstatus = 1;
         }

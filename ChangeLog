@@ -1,3 +1,67 @@
+2006-07-19 20:53  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - handle
+	  some errors, report error type
+
+2006-07-19 19:20  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - avoid a
+	  die from SVN::Client
+
+2006-07-19 19:17  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - print
+	  nothing if changelog can't be fetched
+
+2006-07-19 18:56  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - beautify
+	  cl output: useless remove empty line
+
+2006-07-19 18:52  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - sort all
+	  changelogs entry to make rpm happy
+
+2006-07-19 15:48  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - start
+	  changelog sorting to avoid issue when old log overlap svn one
+
+2006-07-19 15:10  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - remove workaround for
+	  locales issue
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - use
+	  Date::Format to avoid locales issue
+
+2006-07-19 09:36  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - give a way
+	  to get error type
+
+2006-07-18 16:54  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - don't keep
+	  %%changelog line
+
+2006-07-16 02:25  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - fix stripcl
+
+2006-07-16 01:02  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - trap some
+	  error
+	  - return revision number instead just 1
+
+2006-07-16 01:01  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add exitstatus
+
 2006-07-16 02:25  nanardon
 
 	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - fix stripcl
