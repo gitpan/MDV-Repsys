@@ -2,6 +2,7 @@ package MDV::Repsys::Remote;
 
 use strict;
 use warnings;
+use Carp;
 use MDV::Repsys qw(sync_source extract_srpm);
 use Config::IniFiles;
 use SVN::Client;
@@ -11,7 +12,7 @@ use POSIX qw(getcwd);
 use RPM4;
 use File::Temp qw(tempdir tempfile);
 
-our $VERSION = ('$Revision: 41678 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 42290 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -62,6 +63,9 @@ sub new {
     };
 
     bless($repsys, $class);
+    $repsys->set_verbosity(0);
+
+    $repsys
 }
 
 =head2 last_error
@@ -72,6 +76,31 @@ Return the last error message after a failure.
 
 sub last_error {
     return $_[0]->{error};
+}
+
+=head2 set_verbosity($level)
+
+Set the verbosity verbosity of the module:
+
+  0 silent
+  1 progress message
+  2 debug message
+
+=cut
+
+sub set_verbosity {
+    my ($self, $level) = @_;
+    $self->{verbosity} = $level || 0;
+    # not 0 ? (INFO, DEBUG) : ERROR
+    RPM4::setverbosity($level ? $level + 5 : 3);
+} 
+
+sub _print_msg {
+    my ($self, $level, $fmt, @args);
+    $fmt or croak "No message given";
+    $level > 0 or croak "message cannot be < 1 ($level)";
+    return if $level > $self->{verbosity};
+    printf("$fmt\n", @args);
 }
 
 =head2 get_pkgurl($pkgname, %options)
@@ -167,7 +196,7 @@ sub _old_log_pkg {
             push(
                 @cl,
                 {
-                    'time' => str2time($1),
+                    'time' => str2time($1, 'UTC'),
                     author => $2,
                     text => '',
                 }
@@ -439,7 +468,7 @@ sub import_pkg {
     }
 
     MDV::Repsys::set_rpm_dirs("$pkgdir/current");
-    MDV::Repsys::extract_srpm(
+    my ($specfile, $cookie) =  MDV::Repsys::extract_srpm(
         $rpmfile,
         "$pkgdir/current",
     ) or do {
@@ -447,7 +476,6 @@ sub import_pkg {
         return 0;
     };
     
-    my $specfile = "$pkgdir/current/SPECS/$pkgname.spec";
     MDV::Repsys::set_rpm_dirs("$pkgdir/current");
     MDV::Repsys::sync_source("$pkgdir/current", $specfile) or do {
         $self->{error} = MDV::Repsys::repsys_error();
@@ -571,7 +599,6 @@ sub splitchangelog {
 sub _check_url_exists {
     my ($self, $url, %options) = @_;
     my ($parent, $leaf) = $url =~ m!(.*)?/+([^/]*)/*$!;
-    print "$parent $leaf\n";
 
     my $leafs;
 

@@ -65,6 +65,10 @@ my %roptions;
 
 =over 4
 
+=item -v
+
+Increase verbosity level.
+
 =item -c <configfile>
 
 Use this configuration file instead /etc/repsys.conf.
@@ -98,6 +102,7 @@ GetOptions(
     'c|config=s' => \my $configfile,
     'd|dest=s'   => \$roptions{destdir},
     'noyouri'    => \my $noyouri,
+    'v+'         => \my $verbosity,
 ) or pod2usage(1);
 
 my ($action, @args) = @ARGV;
@@ -107,6 +112,8 @@ if (!$action) {
 }
 
 my $exitstatus = 0;
+
+MDV::Repsys::set_verbosity($verbosity);
 
 for ($action) {
 
@@ -134,6 +141,7 @@ for ($action) {
         nocommit => $nocommit,
         configfile => $configfile,
     );
+    $repsys->set_verbosity($verbosity);
 
     /^import$/ and do {
         foreach my $rpmfile (@args) {
@@ -210,36 +218,43 @@ for ($action) {
     };
 
     /^build$/ and do {
-        my $tempdir = tempdir();
-        $repsys->checkout_pkg(
-            $args[0],
-            $tempdir,
-             %roptions,
-        ) or do {
-            warn $repsys->last_error() . "\n";
-            warn "Can't extract $args[0]\n";
-            $exitstatus = 1;
-            next;
-        };
-        my $specfile = $repsys->get_final_spec(
-            (glob("$tempdir/SPECS/*.spec"))[0],
-            %roptions, pkgname => $args[0],
-        ) or do {
-            warn $repsys->last_error() . "\n";
-            warn "can't get final specfile\n";
-            $exitstatus = 1;
-            next;
-        };
+        my $bdir;
+        my $specfile;
+        if ($args[0]) {
+            $bdir = tempdir();
+            $repsys->checkout_pkg(
+                $args[0],
+                $bdir,
+                 %roptions,
+            ) or do {
+                warn $repsys->last_error() . "\n";
+                warn "Can't extract $args[0]\n";
+                $exitstatus = 1;
+                next;
+            };
+            $specfile = $repsys->get_final_spec(
+                (glob("$bdir/SPECS/*.spec"))[0],
+                %roptions, pkgname => $args[0],
+            ) or do {
+                warn $repsys->last_error() . "\n";
+                warn "can't get final specfile\n";
+                $exitstatus = 1;
+                next;
+            };
+        } else {
+            $bdir = getcwd();
+        }
+        RPM4::setverbosity('INFO');
         MDV::Repsys::build(
-            $tempdir,
+            $bdir,
             'b',
             %roptions, specfile => $specfile,
         ) or do {
-            warn MDV::Repsys::repsys::error() . "\n";
+            warn MDV::Repsys::repsys_error() . "\n";
             warn "Build failed\n";
             $exitstatus = 1;
-            next;
         };
+        RPM4::setverbosity('WARNING');
         last;
     };
 

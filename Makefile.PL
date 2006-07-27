@@ -9,7 +9,7 @@ sub MY::postamble {
 .PHONY: ChangeLog
 
 ChangeLog:
-	svn2cl -o ChangeLog --accum
+	svn2cl -o ChangeLog || :
 	rm -f *.bak
 
 MAKE

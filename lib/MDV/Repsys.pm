@@ -1,4 +1,4 @@
-# $Id: Repsys.pm 41598 2006-07-19 09:36:58Z nanardon $
+# $Id: Repsys.pm 42296 2006-07-27 13:42:32Z nanardon $
 
 package MDV::Repsys;
 
@@ -8,9 +8,10 @@ use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 my $error = undef;
+my $verbosity = 0;
 
 =head1 NAME
 
@@ -29,6 +30,27 @@ my %b_macros = (
     '_patchdir' => 'SOURCES',
     '_specdir' => 'SPECS',
 );
+
+=head2 set_verbosity($level)
+
+Set the verbosity verbosity of the module:
+
+  0 silent
+  1 progress message
+  2 debug message
+
+=cut
+
+sub set_verbosity {
+    my ($level) = @_;
+    $verbosity = $level || 0;
+}
+
+sub _print_msg {
+    my ($level, $fmt, @args) = @_;
+    return if ($level > $verbosity);
+    printf("$fmt\n", @args);
+}
 
 =head2 set_rpm_dirs($dir)
 
@@ -150,7 +172,7 @@ sub sync_source {
     );
 
     foreach my $toadd (@needadd) {
-        print "Adding $toadd\n";
+        _print_msg(1, "Adding %s", $toadd);
         $svn->add($toadd, 0);
     }
     @needadd = ();
@@ -186,11 +208,11 @@ sub sync_source {
     }
 
     foreach my $toadd (sort @needadd) {
-        print "Adding $toadd\n";
+        _print_msg(1, "Adding %s", $toadd);
         $svn->add($toadd, 0);
     }
     foreach my $todel (sort @needdel) {
-        print "Delete $todel\n";
+        _print_msg(1, "Removing %s", $todel);
         $svn->delete($todel, 1);
     }
     1;
@@ -306,7 +328,7 @@ sub build {
      
         if ($pbs) {
             $pbs->init;
-            $error = "\nMissing dependancies:\n";
+            $error = "\nFailed dependancies:\n";
             while($pbs->hasnext) {
                 $error .= "\t" . $pbs->problem() . "\n";
             }
