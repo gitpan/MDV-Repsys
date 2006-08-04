@@ -12,7 +12,7 @@ use POSIX qw(getcwd);
 use RPM4;
 use File::Temp qw(tempdir tempfile);
 
-our $VERSION = ('$Revision: 42290 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 52773 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -96,8 +96,8 @@ sub set_verbosity {
 } 
 
 sub _print_msg {
-    my ($self, $level, $fmt, @args);
-    $fmt or croak "No message given";
+    my ($self, $level, $fmt, @args) = @_;
+    $fmt or croak "No message given to _print_msg";
     $level > 0 or croak "message cannot be < 1 ($level)";
     return if $level > $self->{verbosity};
     printf("$fmt\n", @args);
@@ -131,6 +131,7 @@ sub checkout_pkg {
     $destdir ||= $pkgname;
 
     my $revision;
+    $self->_print_msg(1, 'Checkout package %s into %s/', $pkgname, $destdir);
     eval {
         $revision = $self->{svn}->checkout(
             $self->get_pkgurl($pkgname, %options),
@@ -159,6 +160,7 @@ sub get_old_changelog {
     
     $handle ||= \*STDOUT;
 
+    $self->_print_msg(2, 'Get old changelog for %s', $pkgname);
     eval {
         $self->{svn}->cat(
             $handle,
@@ -294,6 +296,7 @@ sub build_final_changelog {
 
     $handle ||= \*STDOUT;
 
+    $self->_print_msg(1, 'Building final changelog for %s', $pkgname);
     my @cls = $self->_log_pkg($pkgname, %options) or return 0;
     push(@cls, $self->_old_log_pkg($pkgname, %options));
  
@@ -328,6 +331,7 @@ sub get_final_spec {
         $pkgname = $h->queryformat('%{NAME}');
     }
 
+    $self->_print_msg(1, 'Building final specfile from %s', $specfile);
     my $dir = $options{destdir} || tempdir( CLEANUP => 1 );
 
     my ($basename) = $specfile =~ m!(?:.*/)?(.*)$!;
@@ -358,25 +362,23 @@ sub get_final_spec {
     return "$dir/$basename";
 }
 
-=head2 get_srpm($pkgname, %options)
+sub _find_last_rev {
+    my ($self, %options) = @_;
+    my $url;
+    if ($options{dir}) {
+        $url = $options{dir};
+    } elsif($options{pkgname}) {
+        $url = $self->get_pkgurl($options{pkgname}, %options);
+    }
+    if (!$url) {
+        die "No url given";
+    }
 
-Build the final src.rpm from the svn. Return the svn revision and
-the src.rpm location.
-
-=cut
-
-sub get_srpm {
-    my ($self, $pkgname, %options) = @_;
-
-    my $tempdir = tempdir(CLEANUP => 1);
-
+    $self->_print_msg(2, 'Finding last rev from %s', $url);
     my $revision = 0;
-
-    $self->checkout_pkg($pkgname, $tempdir, %options) or return 0;
-
     eval {
         $self->{svn}->status(
-            $tempdir,
+            $url,
             $options{revision} || $self->{default}{revision},
             sub {
                 my ($path, $status) = @_;
@@ -390,9 +392,49 @@ sub get_srpm {
         );
     };
     if ($@) {
-        $self->{error} = "can't get status of $tempdir: $@";
+        $self->{error} = "can't get status of $url: $@";
         return;
     }
+    $revision
+}
+
+=head2 get_pkg_lastrev($pkgname, %options)
+
+Return the real last revision change for a package.
+
+=cut
+
+sub get_pkg_lastrev {
+    my ($self, $pkgname, %options) = @_;
+    $self->_find_last_rev(%options, pkgname => $pkgname, %options);
+}
+
+=head2 get_dir_lastrev($dir, %options)
+
+Return the real last revision change for package checkout into $dir.
+
+=cut
+
+sub get_dir_lastrev {
+    my ($self, $dir, %options) = @_;
+    $self->_find_last_rev(%options, dir => $dir, %options);
+}
+
+=head2 get_srpm($pkgname, %options)
+
+Build the final src.rpm from the svn. Return the svn revision and
+the src.rpm location.
+
+=cut
+
+sub get_srpm {
+    my ($self, $pkgname, %options) = @_;
+
+    my $tempdir = tempdir(CLEANUP => 1);
+
+    $self->checkout_pkg($pkgname, $tempdir, %options) or return 0;
+
+    my $revision = $self->get_dir_lastrev($tempdir, %options) or return;
 
     MDV::Repsys::set_rpm_dirs($tempdir);
     RPM4::add_macro("_srcrpmdir " . ($options{destdir} || getcwd()));
@@ -408,7 +450,7 @@ sub get_srpm {
         return 0;
     };
 
-    RPM4::setverbosity(0);
+    RPM4::setverbosity(0) unless($self->{verbosity});
     RPM4::del_macro("_signature");
     $spec->build([ qw(PACKAGESOURCE) ]);
     return ($revision, $spec->srcrpm());
@@ -439,7 +481,7 @@ sub import_pkg {
 
     eval {
         $self->{svn}->checkout(
-            $self->{config}->val('global', 'default_parent') || "",
+            $self->{config}->val('global', 'default_parent') || '',
             $tempdir,
             'HEAD', # What else ??
             0, # Don't be recursive !!
@@ -467,6 +509,7 @@ sub import_pkg {
         $self->{svn}->mkdir("$pkgdir/current");
     }
 
+    $self->_print_msg(1, 'Importing %s', $rpmfile);
     MDV::Repsys::set_rpm_dirs("$pkgdir/current");
     my ($specfile, $cookie) =  MDV::Repsys::extract_srpm(
         $rpmfile,
@@ -495,7 +538,7 @@ sub import_pkg {
             return 0;
         }
     );
-    print "Commiting $pkgname\n";
+    $self->_print_msg(1, "Commiting %s", $pkgname);
     my $revision = -1;
     if (!$self->{nocommit}) {
         my $info = $self->{svn}->commit($pkgdir, 0) unless($self->{nocommit});
@@ -574,7 +617,7 @@ sub splitchangelog {
             $_[0] = \$message;
             return 0;
         });
-        print "Commiting $pkgname/log\n";
+        $self->_print_msg(1, "Commiting %s/log", $pkgname);
         if (!$self->{nocommit}) {
             my $info = $self->{svn}->commit($tempdir, 0);
             $revision = $info->revision();
@@ -674,6 +717,7 @@ sub tag_pkg {
             return 0;
         }
     );
+    $self->_print_msg(1, 'taging %s to %s/%s', $pkgname, $ev, $re);
     $self->{svn}->copy(
         $self->get_pkgurl($pkgname),
         $options{revision} || $self->{default}{revision},
@@ -682,6 +726,7 @@ sub tag_pkg {
     eval {
         $self->{svn}->delete($pristineurl, 1);
     };
+    $self->_print_msg(1, 'taging %s to pristine', $pkgname);
     $self->{svn}->copy(
         $self->get_pkgurl($pkgname),
         $options{revision} || $self->{default}{revision},

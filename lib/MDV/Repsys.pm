@@ -1,14 +1,15 @@
-# $Id: Repsys.pm 42296 2006-07-27 13:42:32Z nanardon $
+# $Id: Repsys.pm 52774 2006-08-04 18:36:30Z nanardon $
 
 package MDV::Repsys;
 
 use strict;
 use warnings;
+use Carp;
 use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 my $error = undef;
 my $verbosity = 0;
@@ -48,6 +49,7 @@ sub set_verbosity {
 
 sub _print_msg {
     my ($level, $fmt, @args) = @_;
+    croak('No message given to _print_msg') unless($fmt);
     return if ($level > $verbosity);
     printf("$fmt\n", @args);
 }
@@ -93,8 +95,9 @@ Return 1 on sucess, 0 on failure.
 sub create_rpm_dirs {
     foreach my $m (keys %b_macros) {
         my $dtc = RPM4::expand('%' . $m); # dir to create
-        if (! -d RPM4::expand($dtc)) {
-            if (!mkdir RPM4::expand($dtc)) {
+        if (! -d $dtc) {
+            _print_msg(2, 'Create directory %s', $dtc);
+            if (!mkdir($dtc)) {
                 $error = "can't create $dtc: $!";
                 return 0;
             }
@@ -114,6 +117,7 @@ sub extract_srpm {
 
     set_rpm_dirs($working_dir, %releative_dir);
     create_rpm_dirs() or return 0;
+    _print_msg(2, 'Extracting %s', $rpmfile);
     RPM4::installsrpm($rpmfile);
 }
 
@@ -135,6 +139,7 @@ sub sync_source {
     }
 
     set_rpm_dirs($working_dir, %relative_dir);
+    _print_msg(2, 'Looking sources from specfile %s', $specfile);
     my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
         $error = "Can't read specfile";
         return;
@@ -264,6 +269,7 @@ Remove the %changelog section from the specfile.
 sub strip_changelog {
     my ($specfile) = @_;
     
+    _print_msg(1, 'removing changleog from %s', $specfile);
     my ($changelog, $newspec) = _strip_changelog($specfile);
 
     $changelog or return 1;
@@ -328,7 +334,7 @@ sub build {
      
         if ($pbs) {
             $pbs->init;
-            $error = "\nFailed dependancies:\n";
+            $error = "\nFailed dependencies:\n";
             while($pbs->hasnext) {
                 $error .= "\t" . $pbs->problem() . "\n";
             }
@@ -375,7 +381,9 @@ sub build {
         }
     }
 
+    RPM4::setverbosity('INFO') if ($verbosity);
     $spec->build([ @bflags ]) and return;
+    RPM4::setverbosity('WARNING');
 
     return %results;
 }

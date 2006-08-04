@@ -1,3 +1,68 @@
+2006-08-04 15:45  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - check value
+	  passed to _print_msg
+
+2006-08-03 12:34  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add proper prefix to all
+	  options in doc
+
+2006-07-30 21:42  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - fix:
+	  function forgot to get arguments
+
+2006-07-30 11:07  glehmann
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: try to make the help
+	  message more clear for the import getsrpm checkout and build
+	  commands
+
+2006-07-28 19:58  glehmann
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: try to make the help
+	  message more clear for the sync command
+
+2006-07-27 20:57  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - dont use
+	  print but internal verbosity function
+
+2006-07-27 20:44  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - provide
+	  get_pkg_lastrev() and get_dir_lastrev()
+
+2006-07-27 15:43  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - fix typo
+
+2006-07-27 13:42  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - 0.04
+	* soft/rpm/MDV-Repsys/trunk/Makefile.PL: - fix make ChangeLog
+
+2006-07-27 13:32  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add verbosity control
+
+2006-07-27 13:30  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - fix and
+	  end verbosity control
+
+2006-07-27 13:09  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - verbosity
+	  management
+
+2006-07-27 12:59  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - verbosity
+	  management
+
 2006-07-26 23:27  nanardon
 
 	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - use better word

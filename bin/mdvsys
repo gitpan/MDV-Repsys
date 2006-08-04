@@ -28,26 +28,41 @@ mdvsys [options] <action> ...
 
 =item import rpmfile1 [[rpmfile2] ...]
 
-import one or more src.rpm directly into the svn.
+import one or more src.rpm directly into the subversion
+repository.
 
 =item getsrpm pkgname
 
-Extract a source package from the svn into current directory.
+Extract a source package from the subversion repository
+into the current directory. The package name is prefixed by
+@<rev>: where <rev> is the current subversion revision
+unless the no-youri option in used. The prefixed source
+package have a valid name to be uploaded by youri.
 
 =item checkout pkgname [dir]
 
-Checkout from svn the "current" version of a package.
+Checkout the "current" version of a package for the
+subversion repository. A directory with the same name
+than the package is created in dir. This new repository
+contains a SPECS directory with the spec file, and a
+SOURCES directory with the source files and patches of
+the package.
+
 
 =item sync [dir]
 
-Find the spec file into the dir SPECS/ and perform proper add/del on
-sources file into the svn from a working copy.
+Search the sources and patches used in the spec file, and 
+perform the commands needed to add the new ones in the
+repository, and remove the ones no more used from the
+repository.
+The changes are not commited.
 
-No changes are done into the repository.
+=item build [pkgname]
 
-=item build pkgname
-
-Retrieve from svn and build package "pkgname"
+Build a package. If a package name is given on the command
+line, the last version from the subversion repository is
+built. If no package name is provided, the package of the
+current directory is built.
 
 =item stripcl [specfile]
 
@@ -69,25 +84,29 @@ my %roptions;
 
 Increase verbosity level.
 
+=item -q
+
+Be completly silent
+
 =item -c <configfile>
 
 Use this configuration file instead /etc/repsys.conf.
 
-=item no-commit
+=item --no-commit
 
 Commit into the svn will not be done.
 
 This options has effect for import action.
 
-=item r <revision>
+=item -r <revision>
 
 Work on a specific revision.
 
-=item m <message>
+=item -m <message>
 
 Set this message for commiting
 
-=item noyouri
+=item --noyouri
 
 Get the standard srpms file, without the '@rev:' prefix.
 
@@ -103,6 +122,7 @@ GetOptions(
     'd|dest=s'   => \$roptions{destdir},
     'noyouri'    => \my $noyouri,
     'v+'         => \my $verbosity,
+    'q|quiet'    => \my $silent,
 ) or pod2usage(1);
 
 my ($action, @args) = @ARGV;
@@ -112,6 +132,8 @@ if (!$action) {
 }
 
 my $exitstatus = 0;
+
+$verbosity = $silent ? 0 : ++$verbosity;
 
 MDV::Repsys::set_verbosity($verbosity);
 
