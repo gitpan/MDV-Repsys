@@ -1,3 +1,27 @@
+2006-08-05 12:48  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - fix
+	  get_pkg_lastrev
+
+2006-08-04 18:50  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - fix verbosity
+
+2006-08-04 18:36  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - 0.05
+
+2006-08-04 18:35  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - add some
+	  message
+
+2006-08-04 15:50  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - mdvsys is verbose by
+	  default, add --quiet option
+
 2006-08-04 15:45  nanardon
 
 	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - check value

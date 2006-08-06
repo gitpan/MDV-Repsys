@@ -70,6 +70,10 @@ Remove the changelog of the specfile and commit it into the svn.
 
 If the --no-commit options is set, the commit part is not done.
 
+=item info <pkgname>
+
+Give information about pkgname from svn
+
 =back
 
 =cut
@@ -289,6 +293,23 @@ for ($action) {
             warn "Can't extract changelog";
             $exitstatus = 1;
         }
+        last;
+    };
+
+    /^info$/ and do {
+        $args[0] or pod2usage(1);
+        my %info = $repsys->get_pkg_info($args[0], %roptions);
+        printf(<<EOF,
+Package:       %s
+Size:          %d
+Last Revision: %s
+Last author:   %s
+EOF
+            $args[0],
+            $info{size} || 0,
+            $info{last_rev} || 0,
+            $info{last_author} || 'N/A',
+        );
         last;
     };
 

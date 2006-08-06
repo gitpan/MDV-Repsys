@@ -11,8 +11,9 @@ use Date::Format;
 use POSIX qw(getcwd);
 use RPM4;
 use File::Temp qw(tempdir tempfile);
+use File::Path;
 
-our $VERSION = ('$Revision: 52773 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 53637 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -60,6 +61,7 @@ sub new {
             revision => 'HEAD',
         },
         error => undef,
+        tempdir => [],
     };
 
     bless($repsys, $class);
@@ -332,7 +334,7 @@ sub get_final_spec {
     }
 
     $self->_print_msg(1, 'Building final specfile from %s', $specfile);
-    my $dir = $options{destdir} || tempdir( CLEANUP => 1 );
+    my $dir = $options{destdir} || $self->_tempdir();
 
     my ($basename) = $specfile =~ m!(?:.*/)?(.*)$!;
 
@@ -362,23 +364,53 @@ sub get_final_spec {
     return "$dir/$basename";
 }
 
-sub _find_last_rev {
-    my ($self, %options) = @_;
-    my $url;
-    if ($options{dir}) {
-        $url = $options{dir};
-    } elsif($options{pkgname}) {
-        $url = $self->get_pkgurl($options{pkgname}, %options);
-    }
-    if (!$url) {
-        die "No url given";
-    }
+=head2 get_pkg_lastrev($pkgname, %options)
 
-    $self->_print_msg(2, 'Finding last rev from %s', $url);
+Return the real last revision change for a package.
+
+=cut
+
+sub get_pkg_lastrev {
+    my ($self, $pkgname, %options) = @_;
+    my $url = $self->get_pkgurl($pkgname, %options);
+    my $leafs;
+
+    eval {
+        $leafs = $self->{svn}->ls(
+            $url, 
+            $options{revision} || $self->{default}{revision},
+            1,
+        );
+    };
+    if ($@) {
+        $self->{error} = "Can't get information from $url: $@";
+        return;
+    }
+    my $revision = 0;
+    foreach my $leaf (%{$leafs || {}}) {
+        defined($leafs->{$leaf}) or next;
+        if ($leafs->{$leaf}->created_rev > $revision) {
+            $revision = $leafs->{$leaf}->created_rev;
+        }
+    }
+        
+    $revision;
+}
+
+=head2 get_dir_lastrev($dir, %options)
+
+Return the real last revision change for package checkout into $dir.
+
+=cut
+
+sub get_dir_lastrev {
+    my ($self, $dir, %options) = @_;
+
+    $self->_print_msg(2, 'Finding last rev from %s', $dir);
     my $revision = 0;
     eval {
         $self->{svn}->status(
-            $url,
+            $dir,
             $options{revision} || $self->{default}{revision},
             sub {
                 my ($path, $status) = @_;
@@ -392,32 +424,11 @@ sub _find_last_rev {
         );
     };
     if ($@) {
-        $self->{error} = "can't get status of $url: $@";
+        $self->{error} = "can't get status of $dir: $@";
         return;
     }
+
     $revision
-}
-
-=head2 get_pkg_lastrev($pkgname, %options)
-
-Return the real last revision change for a package.
-
-=cut
-
-sub get_pkg_lastrev {
-    my ($self, $pkgname, %options) = @_;
-    $self->_find_last_rev(%options, pkgname => $pkgname, %options);
-}
-
-=head2 get_dir_lastrev($dir, %options)
-
-Return the real last revision change for package checkout into $dir.
-
-=cut
-
-sub get_dir_lastrev {
-    my ($self, $dir, %options) = @_;
-    $self->_find_last_rev(%options, dir => $dir, %options);
 }
 
 =head2 get_srpm($pkgname, %options)
@@ -430,7 +441,7 @@ the src.rpm location.
 sub get_srpm {
     my ($self, $pkgname, %options) = @_;
 
-    my $tempdir = tempdir(CLEANUP => 1);
+    my $tempdir = $self->_tempdir();
 
     $self->checkout_pkg($pkgname, $tempdir, %options) or return 0;
 
@@ -477,7 +488,7 @@ sub import_pkg {
     }
     my $pkgname = $h->queryformat('%{NAME}');
 
-    my $tempdir = $options{destdir} ? $options{destdir} : tempdir(CLEANUP => 0);
+    my $tempdir = $options{destdir} ? $options{destdir} : $self->_tempdir();
 
     eval {
         $self->{svn}->checkout(
@@ -578,7 +589,7 @@ sub splitchangelog {
     }
     my $revision = -1;
 
-    my $tempdir = tempdir( CLEANUP => 1 );
+    my $tempdir = $self->_tempdir();
     my $resyslog = $self->{config}->val('log', 'oldurl');
     if ($resyslog) {
         my $oldchangelogurl = "$resyslog/$pkgname";
@@ -735,6 +746,92 @@ sub tag_pkg {
     $self->{svn}->log_msg(undef);
  
     1;    
+}
+
+=head2 get_pkg_info($pkgname, %options)
+
+Return a hash containing usefull information about $pkgname:
+
+=over 4
+
+=item pkgname
+
+The name of the package
+
+=item size
+
+The size of the package (sum of files size)
+
+=item last_rev
+
+The revision of the last changed
+
+=item last_author
+
+The author of the last change
+
+=item last_time
+
+The time of last change (integer value, use loacaltime to have a human
+readable value)
+
+=back
+
+=cut
+
+sub get_pkg_info {
+    my ($self, $pkgname, %options) = @_;
+    my $url = $self->get_pkgurl($pkgname, %options);
+    my $leafs;
+
+    eval {
+        $leafs = $self->{svn}->ls(
+            $url, 
+            $options{revision} || $self->{default}{revision},
+            1,
+        );
+    };
+    if ($@) {
+        $self->{error} = "Can't get information from $url: $@";
+        return;
+    }
+    my %info = (
+        pkgname => $pkgname,
+        last_rev => 0,
+        size => 0,
+    );
+    foreach my $leaf (%{$leafs || {}}) {
+        defined($leafs->{$leaf}) or next;
+        $info{size} += $leafs->{$leaf}->size;
+        if ($leafs->{$leaf}->created_rev > $info{last_rev}) {
+            $info{last_rev} = $leafs->{$leaf}->created_rev();
+            $info{last_time} = $leafs->{$leaf}->time();
+            $info{last_author} = $leafs->{$leaf}->last_author();
+        }
+    }
+        
+    %info;
+}
+
+sub _tempdir {
+    my ($self) = @_;
+    my $tempdir = tempdir( CLEANUP => 1 );
+    push(@{$self->{tempdir}}, $tempdir);
+    $tempdir
+}
+
+=head2 cleanup
+
+This module create a number of temporary directories, all are trashed when
+program terminate but with this function you can force a removal of theses
+directories.
+
+=cut
+
+sub cleanup {
+    my ($self) = @_;
+    rmtree($self->{tempdir}, 0, 1);
+    $self->{tempdir} = [];
 }
 
 1;

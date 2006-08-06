@@ -1,4 +1,4 @@
-# $Id: Repsys.pm 52774 2006-08-04 18:36:30Z nanardon $
+# $Id: Repsys.pm 53638 2006-08-06 20:01:58Z nanardon $
 
 package MDV::Repsys;
 
@@ -9,7 +9,7 @@ use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 my $error = undef;
 my $verbosity = 0;
