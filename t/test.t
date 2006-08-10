@@ -3,7 +3,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 13;
+use Test::More tests => 16;
 use File::Temp qw(tempdir);
 
 use_ok('MDV::Repsys');
@@ -62,6 +62,15 @@ EOF
         $MRR->checkout_pkg('cowsay', "$tempdata/cowsay"),
         "checkout_pkg return ok"
     );
+    ok(-f "$tempdata/cowsay/SPECS/cowsay.spec", "file has been created");
+
+    ok($MRR->get_final_spec("$tempdata/cowsay/SPECS/cowsay.spec",
+            specfile => "$tempdata/cowsay.spec"),
+        "get_final_spec return ok"
+    );
+
+    ok(-f "$tempdata/cowsay.spec", "file has been created");
+
     ok(
         $MRR->tag_pkg('cowsay'),
         'tag_pkg return ok'

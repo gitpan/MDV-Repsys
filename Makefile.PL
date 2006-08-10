@@ -19,4 +19,12 @@ WriteMakefile(
     NAME	 => 'MDV::Repsys',
     VERSION_FROM => 'lib/MDV/Repsys.pm',
     EXE_FILES => [ qw(bin/mdvsys) ],
+    PREREQ_PM => {
+        'File::Tempdir' => undef,
+        'RPM4' => undef,
+        'SVN::Client' => undef,
+        'Date::Parse' => undef,
+        'Config::IniFiles' => undef,
+        'Date::Format' => undef,
+    },
 );

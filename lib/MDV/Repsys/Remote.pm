@@ -10,10 +10,11 @@ use Date::Parse;
 use Date::Format;
 use POSIX qw(getcwd);
 use RPM4;
-use File::Temp qw(tempdir tempfile);
+use File::Temp qw(tempfile);
+use File::Tempdir;
 use File::Path;
 
-our $VERSION = ('$Revision: 53637 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 55427 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -51,6 +52,7 @@ sub new {
     my $cfg = new Config::IniFiles(
         -file => $options{configfile} || "/etc/repsys.conf",
     );
+    $cfg or return undef;
 
     my $repsys = {
         config => $cfg,
@@ -310,22 +312,19 @@ sub build_final_changelog {
     1;
 }
 
-=head2 get_final_spec($specfile, %options)
+=head2 get_final_spec_fd($pecfile, $fh, %options)
 
-Build the final changelog for upload from $specfile.
-
-$options{pkgname} is the package name, if not specified, it is evaluate
-from the specfile.
+Generated the final specfile from $pecfile into $fh filehandle.
 
 =cut
 
-sub get_final_spec {
-    my ($self, $specfile, %options) = @_;
+sub get_final_spec_fd {
+    my ($self, $specfile, $dh, %options) = @_;
 
     my $pkgname = $options{pkgname};
 
     if (!$pkgname) {
-        my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
+        my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 1) or do {
             $self->{error} = "Can't parse specfile $specfile";
             return;
         };
@@ -333,35 +332,85 @@ sub get_final_spec {
         $pkgname = $h->queryformat('%{NAME}');
     }
 
-    $self->_print_msg(1, 'Building final specfile from %s', $specfile);
-    my $dir = $options{destdir} || $self->_tempdir();
+    if (defined(MDV::Repsys::_strip_changelog($specfile, $dh))) {
 
-    my ($basename) = $specfile =~ m!(?:.*/)?(.*)$!;
-
-    if (open(my $sh, "<", $specfile)) {
-        if (open(my $dh, ">", "$dir/$basename")) {
-            while (<$sh>) {
-                print $dh $_;
-            }
-
-            print $dh "\n";
-            $self->build_final_changelog(
-                $pkgname,
-                $dh,
-                %options,
-            ) or return;
-            close($dh);
-        } else {
-            $self->{error} = "Can't open temporary file for writing: $!";
-            return;
-        }
-        close($sh);
+        print $dh "\n";
+        $self->build_final_changelog(
+            $pkgname,
+            $dh,
+            %options,
+        ) or return;
     } else {
         $self->{error} = "Can't open $specfile for reading: $!";
         return;
     }
-    
-    return "$dir/$basename";
+    1;
+}
+
+=head2 get_final_spec($specfile, %options)
+
+Build the final changelog for upload from $specfile.
+
+$options{pkgname} is the package name, if not specified, it is evaluate
+from the specfile.
+
+The new specfile will generated into $options{specfile} is specified,
+otherwise a file with same name is create into $options{destdir}.
+
+The module is safe, the source and destination can be the same file,
+the content will be replaced.
+
+if $options{destdir} is not specified, a temporary directory is created.
+This directory will be trashed on MDV::Repsys::Remote object destruction.
+So this kind of code will not work:
+
+    my $o = MDV::Repsys::Remote->new();
+    my $newspec = $o->get_final_spec($specfile);
+    $o = undef;
+    do_something_with($newspecfile); # the directory has been deleted
+
+Notice this kind of code produce a warning.
+
+=cut
+
+sub get_final_spec {
+    my ($self, $specfile, %options) = @_;
+
+    $self->_print_msg(1, 'Building final specfile from %s', $specfile);
+
+    if (!($options{destdir} || $options{specfile})) {
+        warn "Using get_final_spec() without destdir or specfile option is unsafe, see perldoc MDV::Respsys::Remote";
+    }
+
+    my $odir;
+    my $destfile;
+
+    if ($options{specfile}) {
+        $destfile = $options{specfile};
+    } else {
+        $odir = File::Tempdir->new($options{destdir});
+        push(@{$self->{_temp_late_destroy}}, $odir);
+        my ($basename) = $specfile =~ m!(?:.*/)?(.*)$!;
+        $destfile = $odir->name() . "/$basename";
+    }
+
+    # avoid race condition is source == dest
+    my $tempfh = File::Temp->new(UNLINK => 1);
+    $self->get_final_spec_fd($specfile, $tempfh, %options);
+
+    if (open(my $dh, ">", $destfile)) {
+        seek($tempfh, 0, 0);
+        while (<$tempfh>) {
+            print $dh $_;
+        }
+        close($dh);
+    } else {
+        $self->{error} = "Can't open temporary file for writing: $!";
+        return;
+    }
+    close($tempfh);
+
+    return $destfile;
 }
 
 =head2 get_pkg_lastrev($pkgname, %options)
@@ -441,17 +490,17 @@ the src.rpm location.
 sub get_srpm {
     my ($self, $pkgname, %options) = @_;
 
-    my $tempdir = $self->_tempdir();
+    my $odir = File::Tempdir->new($options{destdir});
 
-    $self->checkout_pkg($pkgname, $tempdir, %options) or return 0;
+    $self->checkout_pkg($pkgname, $odir->name(), %options) or return 0;
 
-    my $revision = $self->get_dir_lastrev($tempdir, %options) or return;
+    my $revision = $self->get_dir_lastrev($odir->name(), %options) or return;
 
-    MDV::Repsys::set_rpm_dirs($tempdir);
+    MDV::Repsys::set_rpm_dirs($odir->name());
     RPM4::add_macro("_srcrpmdir " . ($options{destdir} || getcwd()));
     
     my $specfile = $self->get_final_spec(
-        "$tempdir/SPECS/$pkgname.spec",
+        $odir->name() . "/SPECS/$pkgname.spec",
         %options,
         pkgname => $pkgname,
     );
@@ -480,7 +529,7 @@ sub import_pkg {
 
     my $h = RPM4::rpm2header($rpmfile) or do {
         $self->{error} = "Can't read rpm file $rpmfile";
-        return 0;
+        return;
     };
     if($h->hastag('SOURCERPM')) {
         $self->{error} = "$rpmfile is not a source package";
@@ -488,12 +537,17 @@ sub import_pkg {
     }
     my $pkgname = $h->queryformat('%{NAME}');
 
-    my $tempdir = $options{destdir} ? $options{destdir} : $self->_tempdir();
+    if ($self->_check_url_exists($self->get_pkgurl($pkgname), %options)) {
+        $self->{error} = "$pkgname is already inside svn\n";
+        return;
+    }
+
+    my $odir = File::Tempdir->new($options{destdir});
 
     eval {
         $self->{svn}->checkout(
             $self->{config}->val('global', 'default_parent') || '',
-            $tempdir,
+            $odir->name(),
             'HEAD', # What else ??
             0, # Don't be recursive !!
         );
@@ -503,13 +557,14 @@ sub import_pkg {
         return;
     }
 
-    my $pkgdir = "$tempdir/$pkgname";
+    my $pkgdir = $odir->name() . "/$pkgname";
 
     $self->{svn}->update(
         $pkgdir,
         'HEAD',
         0,
     );
+
     if (-d $pkgdir) {
         $self->{error} = "$pkgname is already inside svn\n";
         return;
@@ -542,7 +597,23 @@ sub import_pkg {
         pkgname => $pkgname,
     ));
    
-    my $message = $options{message} || "Import $pkgname";
+    $self->_commit(
+        $pkgdir,
+        %options,
+        pkgname =>  $pkgname,
+        message => $options{message} || "Import $pkgname",
+    );
+}
+
+sub _commit {
+    my ($self, $dir, %options) = @_;
+    my $pkgname = $options{pkgname} || $dir;
+
+    my $message = $options{message} or do {
+        $self->{error} = "Can't commit w/o log message";
+        return;
+    };
+
     $self->{svn}->log_msg(
         sub {
             $_[0] = \$message;
@@ -552,13 +623,14 @@ sub import_pkg {
     $self->_print_msg(1, "Commiting %s", $pkgname);
     my $revision = -1;
     if (!$self->{nocommit}) {
-        my $info = $self->{svn}->commit($pkgdir, 0) unless($self->{nocommit});
-        $revision = $info->revision();
+        my $info = $self->{svn}->commit($dir, 0) unless($self->{nocommit});
+        $revision = $info->revision() if ($info);
     }
     $self->{svn}->log_msg(undef);
 
     $revision;
 }
+
 
 =head2 splitchangelog($specfile, %options)
 
@@ -589,14 +661,15 @@ sub splitchangelog {
     }
     my $revision = -1;
 
-    my $tempdir = $self->_tempdir();
+    my $odir = File::Tempdir->new();
+
     my $resyslog = $self->{config}->val('log', 'oldurl');
     if ($resyslog) {
         my $oldchangelogurl = "$resyslog/$pkgname";
         eval {
             $self->{svn}->checkout(
                 $resyslog,
-                $tempdir,
+                $odir->name(),
                 'HEAD',
                 0,
             );
@@ -606,23 +679,23 @@ sub splitchangelog {
             return;
         }
         $self->{svn}->update(
-            "$tempdir/$pkgname",
+            $odir->name() . "/$pkgname",
             'HEAD',
             1
         );
-        if (! -d "$tempdir/$pkgname") {
-            $self->{svn}->mkdir("$tempdir/$pkgname");
+        if (! -d $odir->name() . "/$pkgname") {
+            $self->{svn}->mkdir($odir->name() . "/$pkgname");
         }
-        if (-f "$tempdir/$pkgname/log") {
+        if (-f $odir->name() . "/$pkgname/log") {
             return 0;
         }
-        if (open(my $logh, ">", "$tempdir/$pkgname/log")) {
+        if (open(my $logh, ">", $odir->name() . "/$pkgname/log")) {
             print $logh $changelog;
             close($logh);
         } else {
             return 0;
         }
-        $self->{svn}->add("$tempdir/$pkgname/log", 0);
+        $self->{svn}->add($odir->name() . "/$pkgname/log", 0);
         my $message = $options{message} || "import old changelog for $pkgname";
         $self->{svn}->log_msg(sub {
             $_[0] = \$message;
@@ -630,7 +703,14 @@ sub splitchangelog {
         });
         $self->_print_msg(1, "Commiting %s/log", $pkgname);
         if (!$self->{nocommit}) {
-            my $info = $self->{svn}->commit($tempdir, 0);
+            my $info;
+            eval {
+                $info = $self->{svn}->commit($odir->name(), 0);
+            };
+            if ($@) {
+                $self->{error} = "Error while commiting changelog: $@";
+                return;
+            }
             $revision = $info->revision();
         }
 
@@ -648,6 +728,44 @@ sub splitchangelog {
         return;
     }
     $revision;
+}
+
+=head2 commit($dir, %options)
+
+Synchronize sources found into the spec and commit files into the svn.
+
+=cut
+
+sub commit {
+    my ($self, $dir, %options) = @_;
+    my $specfile = (glob('SPECS/*.spec'))[0];
+
+    MDV::Repsys::set_rpm_dirs($dir);
+    my ($toadd, $todel) = MDV::Repsys::_find_unsync_source(
+        working_dir => $dir,
+        specfile => $specfile,
+        svn => $self->{svn},
+
+    ) or do {
+        $self->{error} = MDV::Repsys::repsys_error();
+        return;
+    };
+
+    my $callback = $options{callback} || sub { 1; };
+    if (@{$toadd || []} + @{$todel || []}) {
+        if ($callback->($toadd, $todel)) {
+            MDV::Repsys::_sync_source(
+                svn => $self->{svn},
+                needadd => $toadd,
+                needdel => $todel,
+            );
+        }
+    }
+
+    $self->_commit(
+        $dir,
+        %options,
+    );
 }
 
 sub _check_url_exists {
@@ -813,38 +931,30 @@ sub get_pkg_info {
     %info;
 }
 
-sub _tempdir {
-    my ($self) = @_;
-    my $tempdir = tempdir( CLEANUP => 1 );
-    push(@{$self->{tempdir}}, $tempdir);
-    $tempdir
-}
 
 =head2 cleanup
 
-This module create a number of temporary directories, all are trashed when
-program terminate but with this function you can force a removal of theses
-directories.
+This module creates a number of temporary directories; all are deleted when
+the program terminates, but with this function you can force a removal of
+these directories.
 
 =cut
 
-sub cleanup {
-    my ($self) = @_;
-    rmtree($self->{tempdir}, 0, 1);
-    $self->{tempdir} = [];
-}
+sub cleanup { $_[0]->{_temp_late_destroy} = []; 1; }
+
+sub DESTROY { goto &cleanup }
 
 1;
 
 __END__
 
-=head1 FUNCTIONS OPTIONS
+=head1 FUNCTION OPTIONS
 
 =over 4
 
 =item revision
 
-Work on this revision into the svn
+Work on this revision from the svn
 
 =item destdir
 

@@ -12,23 +12,21 @@ use File::Temp qw(tempdir);
 
 =head1 NAME
 
-mdvsys
-
-=head1 DESCRIPTION
-
-Tools to import and extract rpm from a svn
+mdvsys - Tools to import and extract rpms from a svn
 
 =head1 SYNOPSIS
 
-mdvsys [options] <action> ...
+    mdvsys [options] <action> ...
 
-<action> is one of:
+=head1 DESCRIPTION
+
+The <action> specified on the command-line can be one of:
 
 =over 4
 
 =item import rpmfile1 [[rpmfile2] ...]
 
-import one or more src.rpm directly into the subversion
+Import one or more src.rpm directly into the subversion
 repository.
 
 =item getsrpm pkgname
@@ -48,6 +46,12 @@ contains a SPECS directory with the spec file, and a
 SOURCES directory with the source files and patches of
 the package.
 
+=item commit [dir]
+
+Perform the action than svn commit but check source listed
+into the specfile are sync with the svn content.
+
+Currently you have to use -m option to set the svn log message.
 
 =item sync [dir]
 
@@ -72,7 +76,7 @@ If the --no-commit options is set, the commit part is not done.
 
 =item info <pkgname>
 
-Give information about pkgname from svn
+Give information about pkgname from svn.
 
 =back
 
@@ -120,7 +124,7 @@ Get the standard srpms file, without the '@rev:' prefix.
 
 GetOptions(
     'no-commit'  => \my $nocommit,
-    'm=s'        => \$roptions{commit_message},
+    'm=s'        => \$roptions{message},
     'r=s'        => \$roptions{revision},
     'c|config=s' => \my $configfile,
     'd|dest=s'   => \$roptions{destdir},
@@ -167,6 +171,7 @@ for ($action) {
         nocommit => $nocommit,
         configfile => $configfile,
     );
+    $repsys or exit 1;
     $repsys->set_verbosity($verbosity);
 
     /^import$/ and do {
@@ -222,6 +227,28 @@ for ($action) {
         last;
     };
 
+    /^(ci|commit)$/ and do {
+        my $dir = $args[0] || getcwd();
+        $repsys->commit(
+            $dir,
+            %roptions,
+            callback => sub {
+                $| = 1;
+                print "According the specfile, some sources are not into svn\n";
+                print "Do you want to sync first ? (Y/n) ";
+                my $reply = <STDIN>;
+                if ($reply =~ m/^(N|n)/) {
+                    return;
+                }
+                1;
+            },
+        ) or do {
+            warn $repsys->last_error() . "\n";
+            warn "Can't commit $dir\n";
+        }; 
+        last;
+    };
+
     /^log$/ and do {
         if (!$repsys->build_final_changelog($args[0])) {
             warn $repsys->last_error() . "\n";
@@ -258,9 +285,11 @@ for ($action) {
                 $exitstatus = 1;
                 next;
             };
+            my $odir = File::Tempdir->new();
             $specfile = $repsys->get_final_spec(
                 (glob("$bdir/SPECS/*.spec"))[0],
                 %roptions, pkgname => $args[0],
+                destdir => $odir->name(),
             ) or do {
                 warn $repsys->last_error() . "\n";
                 warn "can't get final specfile\n";

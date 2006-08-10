@@ -1,4 +1,4 @@
-# $Id: Repsys.pm 53638 2006-08-06 20:01:58Z nanardon $
+# $Id: Repsys.pm 55528 2006-08-10 22:18:26Z nanardon $
 
 package MDV::Repsys;
 
@@ -9,7 +9,7 @@ use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 my $error = undef;
 my $verbosity = 0;
@@ -121,31 +121,16 @@ sub extract_srpm {
     RPM4::installsrpm($rpmfile);
 }
 
-=head2 sync_source($workingdir, $specfile)
+sub _find_unsync_source {
+    my (%options) = @_;
+    
+    my $svn = $options{svn} || SVN::Client->new();
+    my $working_dir = $options{working_dir};
 
-Synchronize svn content by performing add/remove on file need to build
-the package. $workingdir should a svn directory. No changes are applied
-to the repository, you have to commit yourself after.
-
-Return 1 on success, 0 on error.
-
-=cut
-
-sub sync_source {
-    my ($working_dir, $specfile, %relative_dir) = @_;
-
-    if ($working_dir !~ m:^/:) {
-        $working_dir = getcwd() . "/$working_dir";
-    }
-
-    set_rpm_dirs($working_dir, %relative_dir);
-    _print_msg(2, 'Looking sources from specfile %s', $specfile);
-    my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
+    my $spec = RPM4::specnew($options{specfile}, undef, '/', undef, 1, 0) or do {
         $error = "Can't read specfile";
         return;
     };
-
-    my $svn = SVN::Client->new();
 
     my %sources;
     my $abs_spec = $spec->specfile;
@@ -211,24 +196,114 @@ sub sync_source {
             1,
         );
     }
+    
+    return(\@needadd, \@needdel);
+}
 
-    foreach my $toadd (sort @needadd) {
+sub _sync_source {
+    my (%options) = @_;
+
+    my $svn = $options{svn} || SVN::Client->new();
+    my ($needadd, $needdel) = ($options{needadd}, $options{needdel});
+    
+    foreach my $toadd (sort @{$needadd || []}) {
         _print_msg(1, "Adding %s", $toadd);
         $svn->add($toadd, 0);
     }
-    foreach my $todel (sort @needdel) {
+    foreach my $todel (sort @{$needdel || []}) {
         _print_msg(1, "Removing %s", $todel);
         $svn->delete($todel, 1);
     }
+
     1;
 }
 
+=head2 find_unsync_files($working_dir, $specfile)
+
+Return two array ref of lists of files that should be added or removed
+from the svn working copy to be sync with the specfile.
+
+=cut
+
+sub find_unsync_files {
+    my ($working_dir, $specfile, %relative_dir) = @_;
+
+    if ($working_dir !~ m:^/:) {
+        $working_dir = getcwd() . "/$working_dir";
+    }
+
+    set_rpm_dirs($working_dir, %relative_dir);
+    _print_msg(2, 'Looking sources from specfile %s', $specfile);
+   
+    my $svn = SVN::Client->new();
+
+    _find_unsync_source(
+        svn => $svn,
+        specfile => $specfile,
+        working_dir => $working_dir,
+    );
+}
+
+=head2 sync_svn_copy($add, $remove)
+
+Perform add or remove of files listed in both array ref.
+
+=cut
+
+sub sync_svn_copy {
+    my ($needadd, $needdel) = @_;
+
+    my $svn = SVN::Client->new();
+
+    _sync_source(
+        svn => $svn,
+        needadd => $needadd,
+        needdel => $needdel,
+    );
+}
+
+=head2 sync_source($workingdir, $specfile)
+
+Synchronize svn content by performing add/remove on file need to build
+the package. $workingdir should a svn directory. No changes are applied
+to the repository, you have to commit yourself after.
+
+Return 1 on success, 0 on error.
+
+=cut
+
+sub sync_source {
+    my ($working_dir, $specfile, %relative_dir) = @_;
+
+    if ($working_dir !~ m:^/:) {
+        $working_dir = getcwd() . "/$working_dir";
+    }
+
+    set_rpm_dirs($working_dir, %relative_dir);
+    _print_msg(2, 'Looking sources from specfile %s', $specfile);
+   
+    my $svn = SVN::Client->new();
+
+    my ($needadd, $needdel) = _find_unsync_source(
+        svn => $svn,
+        specfile => $specfile,
+        working_dir => $working_dir,
+    ) or return;
+
+    _sync_source(
+        svn => $svn,
+        needadd => $needadd,
+        needdel => $needdel,
+    );
+}
+
+
+
 sub _strip_changelog {
-    my ($specfile) = @_;
+    my ($specfile, $dh) = @_;
 
     my $changelog = '';
-    my $newspec = new File::Temp(
-        TEMPLATE => "$ENV{TMPDIR}/basename.XXXXXX",
+    my $newspec = $dh || new File::Temp(
         UNLINK => 1
     ) or do {
         $error = $!;
@@ -237,18 +312,25 @@ sub _strip_changelog {
 
     if (open(my $oldsfh, "<", $specfile)) {
         my $ischangelog = 0;
+        my $emptyline = "";
         while(my $line = <$oldsfh>) {
-            if ($line =~ /^%changelog/) {
+            if ($line =~ /^\s*$/) {
+                $emptyline .= $line;
+                next;
+            }
+            if ($line =~ /^%changelog/i) {
                 $ischangelog = 1;
                 next;
             }
-            if ($line =~ /^%(files|build|check|prep|post|pre|package|description)/) {
+            if ($line =~ /^%(files|build|check|prep|post|pre|package|description)/i) {
                 $ischangelog = 0;
             }
             if ($ischangelog) {
-                $changelog .= $line;
+                $changelog .= $emptyline . $line;
+                $emptyline = "";
             } else {
-                print $newspec $line;
+                print $newspec $emptyline . $line;
+                $emptyline = "";
             }
         }
         close($oldsfh);
@@ -346,7 +428,7 @@ sub build {
     my %results = ();
     
     if ($what =~ /b/) {
-        push(@bflags, qw(PREP BUILD INSTALL CHECK FILECHECK PACKAGEBINARY));
+        push(@bflags, qw(PREP BUILD INSTALL CHECK FILECHECK PACKAGEBINARY CLEAN RMBUILD));
         if (!-d RPM4::expand('%_rpmdir')) {
             mkdir RPM4::expand('%_rpmdir') or do {
                 $error = "Can't create " . RPM4::expand('%_rpmdir') . ": $!";
