@@ -1,3 +1,152 @@
+2006-08-11 13:49  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: Document command aliases
+
+2006-08-11 10:09  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: Changelog
+	  lines shouldn't start with stars
+
+2006-08-11 09:36  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: Give list of actions in
+	  help page
+
+2006-08-11 08:07  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: Fix spelling
+	  in some messages emmitted by mdvsys
+
+2006-08-11 07:41  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: More English fixes
+
+2006-08-10 22:18  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - 0.07
+
+2006-08-10 22:17  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - add commit doc
+
+2006-08-10 16:48  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm,
+	  soft/rpm/MDV-Repsys/trunk/t/test.t: - get_final_spec_fd function
+	  - add warnings on get_final_spec misusage
+	  - more documentation
+	  - more tests
+
+2006-08-10 11:29  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: Ensure
+	  destruction
+
+2006-08-10 11:18  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: -
+	  get_final_spec should not destroy the tempdir as the return
+	  value is within, so the object keep a track of F::Tempdir object
+	  - this function is broken by design, should be review but need
+	  API change
+
+2006-08-10 10:47  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: - read reply from STDIN
+
+2006-08-10 00:53  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - various
+	  fix after real case tests
+
+2006-08-10 00:38  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - trap a
+	  possible failure, syntax fix
+
+2006-08-10 00:36  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - add commit
+	  function
+
+2006-08-10 00:10  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - split
+	  functions
+
+2006-08-09 23:03  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - provide new
+	  functions
+
+2006-08-09 22:47  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - split code to
+	  increase API
+
+2006-08-09 21:44  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - spec section can
+	  be lower and upercase
+
+2006-08-09 16:05  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - use
+	  File::Tempdir, then make temporary dir deletion early
+
+2006-08-09 16:04  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/Makefile.PL: - populate prereq
+
+2006-08-09 12:16  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - cleanup
+	  after build
+	  - check early if pkg is in svn before importing
+	  - avoid a die
+
+2006-08-07 11:14  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: Fail early
+	  if the config file is not found
+
+2006-08-07 08:11  rafael
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys: Make the mdvsys manpage a
+	  bit more like most all section 1 manpages.
+
+2006-08-06 20:01  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys.pm: - 0.06
+
+2006-08-06 20:00  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - add
+	  cleanup() function
+
+2006-08-06 16:02  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - delete
+	  debug print
+
+2006-08-06 16:00  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - don't show
+	  last date, don't work
+
+2006-08-06 15:23  nanardon
+
+	* soft/rpm/MDV-Repsys/trunk/bin/mdvsys,
+	  soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - add info
+	  functions
+
 2006-08-05 12:48  nanardon
 
 	* soft/rpm/MDV-Repsys/trunk/lib/MDV/Repsys/Remote.pm: - fix

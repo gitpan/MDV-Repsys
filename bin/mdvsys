@@ -18,7 +18,7 @@ mdvsys - Tools to import and extract rpms from a svn
 
     mdvsys [options] <action> ...
 
-=head1 DESCRIPTION
+=head1 OPTIONS
 
 The <action> specified on the command-line can be one of:
 
@@ -39,6 +39,8 @@ package have a valid name to be uploaded by youri.
 
 =item checkout pkgname [dir]
 
+=item co pkgname [dir]
+
 Checkout the "current" version of a package for the
 subversion repository. A directory with the same name
 than the package is created in dir. This new repository
@@ -48,10 +50,12 @@ the package.
 
 =item commit [dir]
 
-Perform the action than svn commit but check source listed
-into the specfile are sync with the svn content.
+=item ci [dir]
 
-Currently you have to use -m option to set the svn log message.
+Perform the same action than C<svn commit>, but check that the sources
+listed in the specfile are in sync with the svn contents.
+
+Currently you have to use the -m option to set the svn log message.
 
 =item sync [dir]
 
@@ -59,12 +63,13 @@ Search the sources and patches used in the spec file, and
 perform the commands needed to add the new ones in the
 repository, and remove the ones no more used from the
 repository.
+
 The changes are not commited.
 
 =item build [pkgname]
 
 Build a package. If a package name is given on the command
-line, the last version from the subversion repository is
+line, the latest version from the subversion repository is
 built. If no package name is provided, the package of the
 current directory is built.
 
@@ -72,7 +77,7 @@ current directory is built.
 
 Remove the changelog of the specfile and commit it into the svn.
 
-If the --no-commit options is set, the commit part is not done.
+If the --no-commit option is set, the commit part is not done.
 
 =item info <pkgname>
 
@@ -84,7 +89,9 @@ Give information about pkgname from svn.
 
 my %roptions;
 
-=head1 OPTIONS
+=pod
+
+Options can be one of:
 
 =over 4
 

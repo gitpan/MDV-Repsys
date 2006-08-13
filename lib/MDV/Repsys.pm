@@ -1,4 +1,4 @@
-# $Id: Repsys.pm 55528 2006-08-10 22:18:26Z nanardon $
+# $Id: Repsys.pm 55841 2006-08-13 21:05:12Z nanardon $
 
 package MDV::Repsys;
 
@@ -9,7 +9,7 @@ use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 my $error = undef;
 my $verbosity = 0;
@@ -158,7 +158,7 @@ sub _find_unsync_source {
         0,
         1,
         0,
-        0,
+        1,
     );
 
     foreach my $toadd (@needadd) {
@@ -184,16 +184,16 @@ sub _find_unsync_source {
                         push(@needadd, $entry);
                     }
                 }
-                if ($status->text_status eq '4' || $status->text_status eq '3') {
+                if (grep { $status->text_status eq $_ } ('3', '4', '5')) {
                     if(!$sources{$entry}) {
                         push(@needdel, $entry);
                     }
                 }
             },
-            0,
-            1,
-            0,
-            1,
+            1, # recursive
+            1, # get_all
+            0, # update
+            1, # no_ignore
         );
     }
     

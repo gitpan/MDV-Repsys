@@ -14,7 +14,7 @@ use File::Temp qw(tempfile);
 use File::Tempdir;
 use File::Path;
 
-our $VERSION = ('$Revision: 55427 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 55714 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -252,6 +252,8 @@ sub _log_pkg {
 sub _fmt_cl_entry {
     my ($cl) = @_;
     my @gti = gmtime($cl->{'time'});
+    my $text = $cl->{text};
+    $text =~ s/^\*/-/gm;
     sprintf
         "* %s %s\n%s%s\n",
         #  date
@@ -260,16 +262,16 @@ sub _fmt_cl_entry {
         #           message
         strftime("%a %b %d %Y", @gti), # date
         $cl->{author},                 # author
-        ($cl->{revision} ? 
+        ($cl->{revision} ?
             sprintf(
                 "+ %s (%s)\n",
                 #  svn date
                 #      revision
-                strftime("%x %T", @gti),   # svn date
+                strftime("%Y-%m-%d %T", @gti),   # svn date
                 $cl->{revision},           # revision
             ) : ''
         ),                             # svn date + rev
-        $cl->{text};                   # message
+        $text;                         # message
 }
 
 =head2 log_pkg($pkgname, $handle, %options)
@@ -620,7 +622,7 @@ sub _commit {
             return 0;
         }
     );
-    $self->_print_msg(1, "Commiting %s", $pkgname);
+    $self->_print_msg(1, "Committing %s", $pkgname);
     my $revision = -1;
     if (!$self->{nocommit}) {
         my $info = $self->{svn}->commit($dir, 0) unless($self->{nocommit});
@@ -701,7 +703,7 @@ sub splitchangelog {
             $_[0] = \$message;
             return 0;
         });
-        $self->_print_msg(1, "Commiting %s/log", $pkgname);
+        $self->_print_msg(1, "Committing %s/log", $pkgname);
         if (!$self->{nocommit}) {
             my $info;
             eval {
@@ -846,7 +848,7 @@ sub tag_pkg {
             return 0;
         }
     );
-    $self->_print_msg(1, 'taging %s to %s/%s', $pkgname, $ev, $re);
+    $self->_print_msg(1, 'Tagging %s to %s/%s', $pkgname, $ev, $re);
     $self->{svn}->copy(
         $self->get_pkgurl($pkgname),
         $options{revision} || $self->{default}{revision},
@@ -855,7 +857,7 @@ sub tag_pkg {
     eval {
         $self->{svn}->delete($pristineurl, 1);
     };
-    $self->_print_msg(1, 'taging %s to pristine', $pkgname);
+    $self->_print_msg(1, 'Tagging %s to pristine', $pkgname);
     $self->{svn}->copy(
         $self->get_pkgurl($pkgname),
         $options{revision} || $self->{default}{revision},
