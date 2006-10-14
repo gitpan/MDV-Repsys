@@ -24,6 +24,10 @@ The <action> specified on the command-line can be one of:
 
 =over 4
 
+=item create pkgname
+
+Create a package directory on the subversion repository.
+
 =item import rpmfile1 [[rpmfile2] ...]
 
 Import one or more src.rpm directly into the subversion
@@ -83,7 +87,12 @@ If the --no-commit option is set, the commit part is not done.
 
 Give information about pkgname from svn.
 
+=item submit <pkgname>
+
+Submit packages to be built from svn.
+
 =back
+
 
 =cut
 
@@ -133,6 +142,7 @@ GetOptions(
     'no-commit'  => \my $nocommit,
     'm=s'        => \$roptions{message},
     'r=s'        => \$roptions{revision},
+    't|target=s' => \$roptions{target},
     'c|config=s' => \my $configfile,
     'd|dest=s'   => \$roptions{destdir},
     'noyouri'    => \my $noyouri,
@@ -180,6 +190,16 @@ for ($action) {
     );
     $repsys or exit 1;
     $repsys->set_verbosity($verbosity);
+
+    /^create$/ and do {
+        my $pkgname = $args[0] or pod2usage(1);
+        if (!$repsys->create_pkg($pkgname)) {
+            warn $repsys->last_error() . "\n";
+            warn "Can't create $pkgname\n";
+            $exitstatus = 1;
+        }
+        last;
+    };
 
     /^import$/ and do {
         foreach my $rpmfile (@args) {
@@ -280,6 +300,7 @@ for ($action) {
     /^build$/ and do {
         my $bdir;
         my $specfile;
+        my $odir;
         if ($args[0]) {
             $bdir = tempdir();
             $repsys->checkout_pkg(
@@ -292,7 +313,7 @@ for ($action) {
                 $exitstatus = 1;
                 next;
             };
-            my $odir = File::Tempdir->new();
+            $odir = File::Tempdir->new();
             $specfile = $repsys->get_final_spec(
                 (glob("$bdir/SPECS/*.spec"))[0],
                 %roptions, pkgname => $args[0],
@@ -348,6 +369,28 @@ EOF
         );
         last;
     };
+
+    /^submit$/ and do {
+        #TODO deduce package from current dir
+        $args[0] or pod2usage(1);
+        
+        if (! $roptions{revision}) {
+           my %info = $repsys->get_pkg_info($args[0], %roptions);
+           $roptions{revision} = $info{last_rev};
+        }
+        if (! $roptions{revision}) {
+            warn "Package $args[0] not in svn\n";
+            $exitstatus = 1;
+        } elsif (!$repsys->submit($args[0], %roptions)) {
+            warn $repsys->last_error() . "\n";
+            warn "Can't submit $args[0]\n";
+            $exitstatus = 1;
+        }
+        # si svn+ssh, faire un ssh et la commande qui va bien
+
+        last;
+    };
+
 
     pod2usage(1);
 }

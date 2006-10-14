@@ -14,7 +14,7 @@ use File::Temp qw(tempfile);
 use File::Tempdir;
 use File::Path;
 
-our $VERSION = ('$Revision: 55714 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 65100 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -49,9 +49,25 @@ Disable commit action, usefull for testing purpose
 sub new {
     my ($class, %options) = @_;
 
-    my $cfg = new Config::IniFiles(
-        -file => $options{configfile} || "/etc/repsys.conf",
+    my $homerepsys = (
+        $ENV{REPSYS_CONF} ?
+        $ENV{REPSYS_CONF} :
+        "$ENV{HOME}/.repsys/repsys.conf"
     );
+
+    my $cfg = Config::IniFiles->new(
+        (-r $homerepsys ? (-file => $homerepsys) : ()),
+        '-import' => Config::IniFiles->new(
+            -file => $options{configfile} || "/etc/repsys.conf",
+        ) || undef,
+    );
+
+    my $home_cfg = (
+        -r $homerepsys ?
+        Config::IniFiles->new(-file => $homerepsys, '-import' => $cfg,) :
+        undef
+    ) || Config::IniFiles->new('-import' => $cfg,);
+
     $cfg or return undef;
 
     my $repsys = {
@@ -107,6 +123,21 @@ sub _print_msg {
     printf("$fmt\n", @args);
 }
 
+=head2 get_pkgurl_parent($pkgname, %options)
+
+Return the parent svn url location for package named $pkgname
+
+=cut
+
+sub get_pkgurl_parent {
+    my ($self, $pkgname) = @_;
+    sprintf(
+        "%s/%s",
+        $self->{config}->val('global', 'default_parent') || "",
+        $pkgname,
+    );
+}
+
 =head2 get_pkgurl($pkgname, %options)
 
 Return the svn url location for package named $pkgname
@@ -116,9 +147,8 @@ Return the svn url location for package named $pkgname
 sub get_pkgurl {
     my ($self, $pkgname, %options) = @_;
     sprintf(
-        "%s/%s/%s",
-        $self->{config}->val('global', 'default_parent') || "",
-        $pkgname,
+        "%s/%s",
+        $self->get_pkgurl_parent($pkgname),
         $options{pkgversion} || $self->{default}{pkgversion},
     );
 }
@@ -202,12 +232,15 @@ sub _old_log_pkg {
             push(
                 @cl,
                 {
-                    'time' => str2time($1, 'UTC'),
-                    author => $2,
+                    'time' => str2time($1, 'UTC') || 0,
+                    author => $2 || '',
                     text => '',
                 }
             );
         } else {
+            if (!@cl) {
+                push(@cl, { header => 1, text => '', 'time' => 0 });
+            }
             $cl[-1]->{text} .= "$line\n";
         }
     }
@@ -222,12 +255,13 @@ sub _log_pkg {
 
     my $callback = sub {
         my ($changed_paths, $revision, $author, $date, $message) = @_;
+        my ($auth) = $self->{config}->val('users', $author, $author);
         push(
             @cl, 
             {
-                revision => $revision,
-                author => $self->{config}->val('users', $author, $author),
-                'time' => str2time($date),
+                revision => $revision || 0,
+                author => $auth,
+                'time' => str2time($date) || 0,
                 text => "$message\n",
             }
         );
@@ -251,6 +285,7 @@ sub _log_pkg {
 
 sub _fmt_cl_entry {
     my ($cl) = @_;
+    $cl->{'time'} or return $cl->{text};
     my @gti = gmtime($cl->{'time'});
     my $text = $cl->{text};
     $text =~ s/^\*/-/gm;
@@ -292,7 +327,7 @@ sub log_pkg {
 
 =head2 build_final_changelog($pkgname, $handle, %options)
 
-Build a the complete changelog for a package and print it into $handle.
+Build the complete changelog for a package and print it into $handle.
 If not specified, $handle is set to STDOUT.
 
 =cut
@@ -308,7 +343,11 @@ sub build_final_changelog {
  
     print $handle "\%changelog\n";
 
-    foreach my $cl (sort { $b->{'time'} <=> $a->{'time'} } grep { $_ } @cls) {
+    foreach my $cl (sort {
+            $b->{'time'} && $a->{'time'} ?
+            $b->{'time'} <=> $a->{'time'} :
+            $a->{'time'} <=> $b->{'time'}
+        } grep { $_ } @cls) {
         print $handle _fmt_cl_entry($cl);
     }
     1;
@@ -505,6 +544,7 @@ sub get_srpm {
         $odir->name() . "/SPECS/$pkgname.spec",
         %options,
         pkgname => $pkgname,
+        destdir => $odir->name(),
     );
 
     my $spec = RPM4::specnew($specfile, undef, '/', undef, 1, 0) or do {
@@ -516,6 +556,35 @@ sub get_srpm {
     RPM4::del_macro("_signature");
     $spec->build([ qw(PACKAGESOURCE) ]);
     return ($revision, $spec->srcrpm());
+
+    1;
+}
+
+=head2 create_pkg($pkgname)
+
+Create a package directory on the svn.
+
+=cut
+
+sub create_pkg {
+    my ($self, $pkgname, %options) = @_;
+
+    my $pkgurl_parent = $self->get_pkgurl_parent($pkgname, %options);
+    my $pkgurl = $self->get_pkgurl($pkgname, %options);
+
+    if ($self->_check_url_exists($pkgurl, %options)) {
+        $self->{error} = "$pkgname is already inside svn";
+        return;
+    }
+
+    my $message = $options{message} || "Create $pkgname";
+    $self->{svn}->log_msg(sub {
+            $_[0] = \$message;
+            return 0;
+        });
+    $self->_print_msg(1, "Creating %s", $pkgname);
+    $self->{svn}->mkdir([ $pkgurl_parent, $pkgurl, "$pkgurl/SOURCES", "$pkgurl/SPECS" ], );
+    $self->{svn}->log_msg(undef);
 
     1;
 }
@@ -540,7 +609,7 @@ sub import_pkg {
     my $pkgname = $h->queryformat('%{NAME}');
 
     if ($self->_check_url_exists($self->get_pkgurl($pkgname), %options)) {
-        $self->{error} = "$pkgname is already inside svn\n";
+        $self->{error} = "$pkgname is already inside svn";
         return;
     }
 
@@ -568,14 +637,12 @@ sub import_pkg {
     );
 
     if (-d $pkgdir) {
-        $self->{error} = "$pkgname is already inside svn\n";
+        $self->{error} = "$pkgname is already inside svn";
         return;
-    } else {
-        $self->{svn}->mkdir($pkgdir);
     }
-    if (! -d "$pkgdir/current") {
-        $self->{svn}->mkdir("$pkgdir/current");
-    }
+
+    $self->{svn}->mkdir($pkgdir);
+    $self->{svn}->mkdir("$pkgdir/current");
 
     $self->_print_msg(1, 'Importing %s', $rpmfile);
     MDV::Repsys::set_rpm_dirs("$pkgdir/current");
@@ -689,12 +756,14 @@ sub splitchangelog {
             $self->{svn}->mkdir($odir->name() . "/$pkgname");
         }
         if (-f $odir->name() . "/$pkgname/log") {
-            return 0;
+            $self->{error} = "An old changelog file already exists for $pkgname, please fix";
+            return;
         }
         if (open(my $logh, ">", $odir->name() . "/$pkgname/log")) {
             print $logh $changelog;
             close($logh);
         } else {
+            $self->{error} = "Can't open new log file";
             return 0;
         }
         $self->{svn}->add($odir->name() . "/$pkgname/log", 0);
@@ -929,10 +998,44 @@ sub get_pkg_info {
             $info{last_author} = $leafs->{$leaf}->last_author();
         }
     }
-        
+
     %info;
 }
 
+=head2 submit($pkgname, %options)
+
+Submit the package on the build host.
+
+=cut
+
+sub submit {
+    my ($self, $pkgname, %options) = @_;
+    
+    my $pkgurl_parent = $self->get_pkgurl_parent($pkgname, %options);
+    if (!$self->_check_url_exists($pkgurl_parent, %options)) {
+        $self->{error} = "$pkgname is not in svn";
+        return;
+    }
+
+    my $host = $self->{config}->val('global', 'default_parent');
+    $host = (split("/", $host))[2];
+
+    my $createsrpm = $self->{config}->val('helper', 'create-srpm');
+    
+    # back to default
+    $options{'target'} ||= $self->{config}->val('submit', 'name', 'Cooker');
+    
+    # TODO we can also use xml-rpc, even if not implemented on the server side
+    my @command = (
+        'ssh',
+        $host,
+        $createsrpm,
+        $pkgurl_parent,
+        '-r', $options{'revision'}, 
+        '-t', $options{'target'}
+    );
+    system(@command) == 0;
+}
 
 =head2 cleanup
 

@@ -1,4 +1,4 @@
-# $Id: Repsys.pm 55841 2006-08-13 21:05:12Z nanardon $
+# $Id: Repsys.pm 65194 2006-10-14 17:02:54Z nanardon $
 
 package MDV::Repsys;
 
@@ -8,8 +8,9 @@ use Carp;
 use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
+use File::Temp;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 my $error = undef;
 my $verbosity = 0;
@@ -297,8 +298,6 @@ sub sync_source {
     );
 }
 
-
-
 sub _strip_changelog {
     my ($specfile, $dh) = @_;
 
@@ -472,6 +471,39 @@ sub build {
 
 sub repsys_error {
     $error
+}
+
+sub _commit_editor {
+    my ($msg) = @_;
+    
+    my $tmp = new File::Temp();
+    $tmp->unlink_on_destroy(1);
+    print $tmp  <<EOF;
+
+SVN: Line begining by SVN are ignored
+SVN: MDV::Repsys $VERSION
+EOF
+    close($tmp);
+    my ($editor) = map { $ENV{$_} }  grep { $ENV{$_} } qw(SVN_EDITOR VISUAL EDITOR);
+    $editor ||= 'vi';
+    if (system($editor, $tmp->filename) == -1) {
+        warn "Cannot start $editor\n";
+        $msg = undef;
+        return 0;
+    }
+    if (open(my $rh, "<", $tmp->filename)) {
+        my $rmsg = '';
+        while (<$rh>) {
+            m/^SVN:/ and next;
+            $rmsg .= $_;
+        }
+        close ($rh);
+        $msg = \$rmsg;
+    } else {
+        $msg = undef;
+        return 0;
+    }
+    1;
 }
 
 1;

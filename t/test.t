@@ -3,7 +3,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 16;
+use Test::More tests => 17;
 use File::Temp qw(tempdir);
 
 use_ok('MDV::Repsys');
@@ -102,7 +102,7 @@ EOF
     );
     ok(-f (glob("$tempdata/cowsay*.rpm"))[0], "rpm was really built");
 
-
+    ok($MRR->create_pkg('foo'), "can create new pkg");
 
 }
 
