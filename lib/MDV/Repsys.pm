@@ -1,4 +1,4 @@
-# $Id: Repsys.pm 65194 2006-10-14 17:02:54Z nanardon $
+# $Id: Repsys.pm 103942 2007-01-03 23:40:24Z nanardon $
 
 package MDV::Repsys;
 
@@ -8,9 +8,8 @@ use Carp;
 use SVN::Client;
 use RPM4;
 use POSIX qw(getcwd);
-use File::Temp;
 
-our $VERSION = '0.09';
+our $VERSION = '1.00';
 
 my $error = undef;
 my $verbosity = 0;
@@ -31,6 +30,12 @@ my %b_macros = (
     '_sourcedir' => 'SOURCES',
     '_patchdir' => 'SOURCES',
     '_specdir' => 'SPECS',
+);
+
+my %optional_macros = (
+    '_builddir' => 'BUILD',
+    '_rpmdir' => 'RPMS',
+    '_srcrpmdir' => 'SRPMS',
 );
 
 =head2 set_verbosity($level)
@@ -63,6 +68,10 @@ Set internals rpm macros that are used by rpm building functions:
   _patchdir  to $dir/SOURCES
   _specdir   to $dir/SPECS
 
+And, if their directories are not writable, these macros are set:  
+  _rpmdir    to $dir/RPMS
+  _srcrpmdir   to $dir/SRPMS
+  _builddir  to $dir/BUILD
 =cut
 
 sub set_rpm_dirs {
@@ -79,6 +88,18 @@ sub set_rpm_dirs {
             ),
         );
     }
+    foreach my $m (keys %optional_macros) {
+        if (! -w RPM4::expand('%' . $m)) { 
+            RPM4::add_macro(
+                sprintf(
+                    '%s %s/%s', 
+                    $m, $dir, 
+                    (defined($relative_dir{$m}) ? $relative_dir{$m} : $optional_macros{$m}) || '',
+                ),
+            );
+        }
+    }
+
 }
 
 =head2 create_rpm_dirs
@@ -94,7 +115,7 @@ Return 1 on sucess, 0 on failure.
 =cut
 
 sub create_rpm_dirs {
-    foreach my $m (keys %b_macros) {
+    foreach my $m (keys %b_macros, keys %optional_macros) {
         my $dtc = RPM4::expand('%' . $m); # dir to create
         if (! -d $dtc) {
             _print_msg(2, 'Create directory %s', $dtc);
@@ -298,6 +319,8 @@ sub sync_source {
     );
 }
 
+
+
 sub _strip_changelog {
     my ($specfile, $dh) = @_;
 
@@ -390,6 +413,7 @@ sub build {
                 _srcrpmdir => 'SRPMS',
             ) : ()
     );
+    create_rpm_dirs() or return 0;
 
     my $specfile = $options{specfile} || (glob(RPM4::expand('%_specdir/*.spec')))[0];
     if (!$specfile) {
@@ -469,17 +493,27 @@ sub build {
     return %results;
 }
 
+=head2 repsys_error
+
+Return the last repsys error.
+
+=cut
+
+
 sub repsys_error {
     $error
 }
+
+# Exemple of use:
+# my $msg = "rere" ; MDV::Repsys::_commit_editor(\$msg); print $msg;
 
 sub _commit_editor {
     my ($msg) = @_;
     
     my $tmp = new File::Temp();
     $tmp->unlink_on_destroy(1);
-    print $tmp  <<EOF;
-
+    printf $tmp  <<EOF, ($$msg || "");
+%s
 SVN: Line begining by SVN are ignored
 SVN: MDV::Repsys $VERSION
 EOF
@@ -488,7 +522,7 @@ EOF
     $editor ||= 'vi';
     if (system($editor, $tmp->filename) == -1) {
         warn "Cannot start $editor\n";
-        $msg = undef;
+        $$msg = undef;
         return 0;
     }
     if (open(my $rh, "<", $tmp->filename)) {
@@ -498,9 +532,10 @@ EOF
             $rmsg .= $_;
         }
         close ($rh);
-        $msg = \$rmsg;
+        chomp($rmsg);
+        $$msg = $rmsg;
     } else {
-        $msg = undef;
+        $$msg = undef;
         return 0;
     }
     1;

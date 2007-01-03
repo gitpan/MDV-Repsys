@@ -87,12 +87,19 @@ If the --no-commit option is set, the commit part is not done.
 
 Give information about pkgname from svn.
 
+=item log <pkgname>
+
+Generate %changelog about pkgname from svn.
+
 =item submit <pkgname>
 
 Submit packages to be built from svn.
 
 =back
 
+If no package name is given, mdvsys will try to deduce it from the
+current working copy, if applicable, for the command log, submit, info
+and getsrpm.
 
 =cut
 
@@ -202,6 +209,7 @@ for ($action) {
     };
 
     /^import$/ and do {
+        $args[0] or pod2usage(1);
         foreach my $rpmfile (@args) {
             if (!$repsys->import_pkg(
                 $rpmfile,
@@ -216,6 +224,14 @@ for ($action) {
     };
 
     /^getsrpm$/ and do {
+        if (! $args[0]) {
+            my $package = $repsys->get_pkgname_from_wc();
+            $args[0] = $package if $package;
+        }
+        if (! @args) {
+            warn "No package given on the command line, and not in a checkout directory\n";
+            $exitstatus = 1;
+        }  
         foreach my $name (@args) {
             my ($r, $f) = $repsys->get_srpm(
                 $name,
@@ -242,6 +258,7 @@ for ($action) {
     };
 
     /^(co|checkout)$/ and do {
+        $args[0] or pod2usage(1);
         if (!$repsys->checkout_pkg(
             $args[0],
             $args[1],
@@ -277,6 +294,11 @@ for ($action) {
     };
 
     /^log$/ and do {
+        if (! $args[0]) {
+            my $package = $repsys->get_pkgname_from_wc();
+            $args[0] = $package if $package;
+        }
+        $args[0] or pod2usage(1);
         if (!$repsys->build_final_changelog($args[0])) {
             warn $repsys->last_error() . "\n";
             warn "Can't get changelog of $args[0]\n";
@@ -333,7 +355,7 @@ for ($action) {
             'b',
             %roptions, specfile => $specfile,
         ) or do {
-            warn MDV::Repsys::repsys_error() . "\n";
+            warn ((MDV::Repsys::repsys_error() || "") . "\n");
             warn "Build failed\n";
             $exitstatus = 1;
         };
@@ -354,40 +376,51 @@ for ($action) {
     };
 
     /^info$/ and do {
+        $args[0] or $args[0] = $repsys->get_pkgname_from_wc(); 
         $args[0] or pod2usage(1);
         my %info = $repsys->get_pkg_info($args[0], %roptions);
-        printf(<<EOF,
+        if ($info{last_rev}) {
+
+            printf(<<EOF,
 Package:       %s
 Size:          %d
 Last Revision: %s
 Last author:   %s
 EOF
-            $args[0],
-            $info{size} || 0,
-            $info{last_rev} || 0,
-            $info{last_author} || 'N/A',
-        );
+                $args[0],
+                $info{size} || 0,
+                $info{last_rev} || 0,
+                $info{last_author} || 'N/A',
+            ) 
+        } else {
+            print $args[0] . " is not in svn.\n";
+        }
         last;
     };
 
     /^submit$/ and do {
-        #TODO deduce package from current dir
+        $args[0] or $args[0] = $repsys->get_pkgname_from_wc(); 
         $args[0] or pod2usage(1);
         
         if (! $roptions{revision}) {
            my %info = $repsys->get_pkg_info($args[0], %roptions);
            $roptions{revision} = $info{last_rev};
         }
+
         if (! $roptions{revision}) {
             warn "Package $args[0] not in svn\n";
             $exitstatus = 1;
-        } elsif (!$repsys->submit($args[0], %roptions)) {
-            warn $repsys->last_error() . "\n";
+	    last;
+        }
+
+	if (! $repsys->submit($args[0], %roptions)) {
+            #warn $repsys->last_error() . "\n";
             warn "Can't submit $args[0]\n";
             $exitstatus = 1;
+	    last;
         }
-        # si svn+ssh, faire un ssh et la commande qui va bien
 
+        print "Package submitted!\n";
         last;
     };
 

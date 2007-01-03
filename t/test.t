@@ -3,8 +3,9 @@
 
 use strict;
 use warnings;
-use Test::More tests => 17;
+use Test::More tests => 18;
 use File::Temp qw(tempdir);
+use POSIX qw(getcwd);
 
 use_ok('MDV::Repsys');
 use_ok('MDV::Repsys::Remote');
@@ -62,6 +63,10 @@ EOF
         $MRR->checkout_pkg('cowsay', "$tempdata/cowsay"),
         "checkout_pkg return ok"
     );
+    my $cwd = getcwd();
+    chdir("$tempdata/cowsay");
+    ok($MRR->get_pkgname_from_wc() eq 'cowsay', 'get_pkgname_from_wc return ok');
+    chdir($cwd);
     ok(-f "$tempdata/cowsay/SPECS/cowsay.spec", "file has been created");
 
     ok($MRR->get_final_spec("$tempdata/cowsay/SPECS/cowsay.spec",

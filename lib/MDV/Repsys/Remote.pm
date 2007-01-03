@@ -14,7 +14,7 @@ use File::Temp qw(tempfile);
 use File::Tempdir;
 use File::Path;
 
-our $VERSION = ('$Revision: 65100 $' =~ m/(\d+)/)[0];
+our $VERSION = ('$Revision: 103942 $' =~ m/(\d+)/)[0];
 
 =head1 NAME
 
@@ -138,6 +138,32 @@ sub get_pkgurl_parent {
     );
 }
 
+=head2 get_pkgname_from_wc
+
+Return the package name from current working copy
+
+=cut
+
+sub get_pkgname_from_wc { 
+    my ($self) = @_;
+
+    my $ctx = new SVN::Client();
+    our $url;
+    my $receiver = sub {
+        my( $path, $info, $pool ) = @_;
+        our $url = $info->URL;
+    };
+    eval { 
+        $ctx->info(getcwd(), undef, 'WORKING', $receiver, 0); 
+    };
+    if ($@) {
+        return ;
+    }
+    my $parent = $self->{config}->val('global', 'default_parent');
+    $url =~ /^\Q$parent\E\/([^\/]*)\/?.*$/;
+    return $1 
+}
+
 =head2 get_pkgurl($pkgname, %options)
 
 Return the svn url location for package named $pkgname
@@ -253,18 +279,70 @@ sub _log_pkg {
     
     my @cl;
 
-    my $callback = sub {
-        my ($changed_paths, $revision, $author, $date, $message) = @_;
-        my ($auth) = $self->{config}->val('users', $author, $author);
-        push(
-            @cl, 
-            {
-                revision => $revision || 0,
-                author => $auth,
-                'time' => str2time($date) || 0,
-                text => "$message\n",
+    eval {
+        $self->{svn}->log(
+            $self->get_pkgurl($pkgname, %options, pkgversion => 'releases'),
+            $options{revision} || $self->{default}{revision}, 
+            0, 1, 0,
+            sub {
+                my ($changed_paths, $revision, $author, $date, $message) = @_;
+                #print "$revision, $author, $date, $message\n";
+                foreach (keys %{$changed_paths || {}}) {
+                    my $info = $changed_paths->{$_};
+                    $info->copyfrom_rev() > 0 or next;
+                    m!releases/(?:([^:/]+):)?([^/]+)/([^/]+)! or next;
+                    push(
+                        @cl,
+                        {
+                            revision => $info->copyfrom_rev(),
+                            author => '',
+                            'time' => str2time($date),
+                            text => '',
+                            evr => "$2-$3",
+                        }
+                    );
+                }
             }
         );
+    };
+
+    my $callback = sub {
+        my ($changed_paths, $revision, $author, $date, $message) = @_;
+        my $cltoupdate;
+        foreach my $clg (sort { $b->{revision} <=> $a->{revision} } @cl) {
+            if ($revision > $clg->{revision}) {
+                next;
+            } else {
+                $cltoupdate = $clg;
+            }
+        }
+
+        if (!$cltoupdate) {
+            $cltoupdate = {
+                revision => $revision,
+                author => $author,
+                'time' => str2time($date),
+                text => '',
+            };
+
+            push(@cl, $cltoupdate);
+        }
+
+        $cltoupdate->{author} ||= $author,
+        my @gti = gmtime(str2time($date));
+
+        my ($textentry) = grep { $_->{author} eq $author } @{$cltoupdate->{log} || []};
+
+        if (!$textentry) {
+            $textentry = {
+                author => $author,
+                text => [],
+            };
+            push(@{$cltoupdate->{log}}, $textentry);
+        }
+
+        push(@{$textentry->{text}}, $message);
+        
     };
 
     eval {
@@ -284,20 +362,52 @@ sub _log_pkg {
 }
 
 sub _fmt_cl_entry {
-    my ($cl) = @_;
+    my ($self, $cl) = @_;
     $cl->{'time'} or return $cl->{text};
     my @gti = gmtime($cl->{'time'});
+
+    # subversion changelog is having empty commit
+    return if not $cl->{author};
     my $text = $cl->{text};
+    if (!$text) {
+        my $indent = '';
+        foreach my $log (@{$cl->{log} || []}) {
+            if ($log->{author} ne $cl->{author}) {
+                $text .= "- from " . $self->{config}->val('users', $log->{author}, $log->{author}) . "\n";
+            }
+            foreach my $mes (@{$log->{text}}) {
+                my $dash = '- ';
+                $mes =~ s/^(\s|-|\*)*/$indent- /;
+                foreach (split(/\n/, $mes)) {
+                    chomp;
+                    $_ or next;
+                    s/([^%])?%([^%])?/$1%%$2/g;
+                    s/^(\s|\*)*/$indent/;
+                    if (!m/^-/) {
+                        s/^/  /;
+                    }
+                    $text .= "$_\n";
+                    $dash = '  ';
+                }
+            }
+            $indent = '  ';
+        }
+    }
     $text =~ s/^\*/-/gm;
     sprintf
-        "* %s %s\n%s%s\n",
+        "* %s %s%s\n%s%s\n",
         #  date
         #     author
         #         svn date + rev
         #           message
         strftime("%a %b %d %Y", @gti), # date
-        $cl->{author},                 # author
-        ($cl->{revision} ?
+        $self->{config}->val(
+            'users', 
+            $cl->{author}, 
+            $cl->{author}
+        ),                             # author
+        ($cl->{evr} ? " $cl->{evr}" : ''),
+        ($cl->{revision} ? 
             sprintf(
                 "+ %s (%s)\n",
                 #  svn date
@@ -320,7 +430,7 @@ sub log_pkg {
     my ($self, $pkgname, $handle, %options) = @_;
     $handle ||= \*STDOUT;
     foreach my $cl ($self->_log_pkg($pkgname, %options)) {
-            print $handle _fmt_cl_entry($cl);
+            print $handle $self->_fmt_cl_entry($cl);
     }
     1;
 }
@@ -348,7 +458,7 @@ sub build_final_changelog {
             $b->{'time'} <=> $a->{'time'} :
             $a->{'time'} <=> $b->{'time'}
         } grep { $_ } @cls) {
-        print $handle _fmt_cl_entry($cl);
+        print $handle $self->_fmt_cl_entry($cl);
     }
     1;
 }
@@ -678,15 +788,16 @@ sub _commit {
     my ($self, $dir, %options) = @_;
     my $pkgname = $options{pkgname} || $dir;
 
-    my $message = $options{message} or do {
-        $self->{error} = "Can't commit w/o log message";
-        return;
-    };
+    my $message = $options{message};
 
     $self->{svn}->log_msg(
+        $message ?
         sub {
             $_[0] = \$message;
             return 0;
+        } :
+        sub {
+            MDV::Repsys::_commit_editor($_[0])
         }
     );
     $self->_print_msg(1, "Committing %s", $pkgname);
@@ -1023,7 +1134,7 @@ sub submit {
     my $createsrpm = $self->{config}->val('helper', 'create-srpm');
     
     # back to default
-    $options{'target'} ||= $self->{config}->val('submit', 'name', 'Cooker');
+    $options{'target'} ||= $self->{config}->val('submit', 'default');
     
     # TODO we can also use xml-rpc, even if not implemented on the server side
     my @command = (
